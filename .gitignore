@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+relay/.dev.vars
+.DS_Store
