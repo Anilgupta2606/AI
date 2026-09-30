@@ -353,7 +353,7 @@ const MoneyAI = (function(){
     }
     if(id === 'anthropic'){ const t = m => /haiku/.test(m) ? (fast ? 0 : 1) : /sonnet/.test(m) ? (fast ? 1 : 0) : 2; return uniq.filter(m=>/^claude/.test(m) && !/opus/.test(m)).sort((a, b)=>t(a) - t(b) || b.localeCompare(a)); }
     // a model on this computer: the smallest good one first (a laptop runs a 4B model in seconds, an 8B one in minutes)
-    if(id === 'ollama'){ const LOCAL = ['gemma3:4b', 'llama3.2:3b', 'qwen2.5:3b', 'phi4-mini', 'qwen3:4b', 'gemma3:1b'];
+    if(id === 'ollama'){ const LOCAL = ['qwen3:4b-instruct', 'gemma3:4b', 'llama3.2:3b', 'qwen2.5:3b', 'phi4-mini', 'qwen3:4b', 'gemma3:1b'];     // measured on an 8 GB M1: qwen3 4B Instruct reads web pages best (4/4, 25 s)
       const li = m => { const i = LOCAL.findIndex(x=>m.toLowerCase().indexOf(x) === 0); return i < 0 ? LOCAL.length : i; };
       return uniq.sort((a, b)=>li(a) - li(b) || (sizeB(a) || 99) - (sizeB(b) || 99)); }
     let list = uniq;
@@ -380,7 +380,8 @@ const MoneyAI = (function(){
   async function bestModels(id, key, tier){
     if(id === 'webllm') return [key];
     const cache = lsGet(MODELS_KEY, {}), c = cache[id], tag = key.slice(-6);
-    let names = c && c.key === tag && Date.now() - c.at < 86400000 && c.names && c.names.length ? c.names : null;
+    // a day's cache for the online services; the models on this computer are read fresh (a new one may just have been downloaded)
+    let names = id !== 'ollama' && c && c.key === tag && Date.now() - c.at < 86400000 && c.names && c.names.length ? c.names : null;
     if(!names){
       try{ names = await listModels(id, key); if(names.length){ cache[id] = {at: Date.now(), key: tag, names}; lsSet(MODELS_KEY, cache); } }catch(e){ names = null; }
     }
