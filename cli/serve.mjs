@@ -7,7 +7,8 @@
      GET /health   GET /search?q=…&n=8   GET /read?url=…&links=1      (the same as the Cloudflare relay)
    and the page for the AI itself (ai ui):
      GET /   the page      POST /ask {question, history} -> its steps, then the answer (one JSON per line)
-     GET /learned   POST /teach {question, lesson}   POST /forget {id}
+     GET /learned   POST /teach {question, lesson}   POST /forget {id}   GET|POST /brain (the AI's lessons, swapped with the published page)
+   The AI's own calls answer only this page and your published site.
    Started at login by ~/Library/LaunchAgents/com.moneyai.local.plist (ai serve runs it by hand).
    ========================================================= */
 import http from 'http';
@@ -22,7 +23,7 @@ const body = req => new Promise((res, rej)=>{ let b = ''; req.on('data', c=>{ b 
 const PORT = +process.env.MONEY_AI_PORT || 8899;
 const ALLOWED = [/^https:\/\/anilgupta2606\.github\.io$/, /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/];
 const headers = origin => Object.assign({'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store'},
-  origin && ALLOWED.some(r=>r.test(origin)) ? {'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET, OPTIONS', 'access-control-allow-headers': 'x-relay-token, content-type',
+  origin && ALLOWED.some(r=>r.test(origin)) ? {'access-control-allow-origin': origin, 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'x-relay-token, content-type',
     'access-control-allow-private-network': 'true', 'access-control-max-age': '600', vary: 'Origin'} : {});
 
 export function serve(port){
@@ -42,11 +43,12 @@ export function serve(port){
     const samePage = req.headers['sec-fetch-site'] === 'same-origin';
     if(u.pathname !== '/health' && !samePage && !ALLOWED.some(r=>r.test(origin))) return send(403, {error: 'Not allowed.'});
     // the AI itself: only from the page above (not other sites)
-    if(['/ask', '/teach', '/forget', '/learned'].includes(u.pathname)){
-      if(!samePage && !/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(origin)) return send(403, {error: 'Open http://127.0.0.1:' + (port || PORT) + ' on this Mac.'});
+    if(['/ask', '/teach', '/forget', '/learned', '/brain'].includes(u.pathname)){
       try{
         const B = await brain();
         if(u.pathname === '/learned') return send(200, B.learned());
+        if(u.pathname === '/brain' && req.method === 'GET') return send(200, B.brainExport());
+        if(u.pathname === '/brain') return send(200, {ok: true, changed: B.brainMerge(await body(req))});
         if(req.method !== 'POST') return send(405, {error: 'Use POST.'});
         const d = await body(req);
         if(u.pathname === '/teach') return send(200, {ok: !!(await B.teach(String(d.lesson || ''), String(d.question || '')))});
@@ -54,7 +56,7 @@ export function serve(port){
         // /ask: steps as they happen, then the answer — one JSON object per line
         const q = String(d.question || '').trim().slice(0, 2000);
         if(!q) return send(400, {error: 'No question.'});
-        res.writeHead(200, {'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff'});
+        res.writeHead(200, Object.assign(headers(origin), {'content-type': 'application/x-ndjson; charset=utf-8', 'x-content-type-options': 'nosniff'}));
         const line = x => { try{ res.write(JSON.stringify(x) + '\n'); }catch(e){} };
         const history = (Array.isArray(d.history) ? d.history : []).slice(-6).map(h=>({role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, 1500)}));
         const t = Date.now();
@@ -64,7 +66,7 @@ export function serve(port){
       }catch(e){ return send(500, {error: String(e.message || e)}); }
     }
     try{
-      if(u.pathname === '/health') return send(200, {ok: true, local: true, search: {searxng: await Local.searxngUp()}, reader: 'this Mac'});
+      if(u.pathname === '/health') return send(200, {ok: true, local: true, search: {searxng: await Local.searxngUp()}, reader: 'this Mac', model: await (await brain()).localModel().catch(()=>'')});
       if(u.pathname === '/search'){
         const q = String(u.searchParams.get('q') || '').slice(0, 400).trim();
         if(!q) return send(400, {error: 'No question.'});

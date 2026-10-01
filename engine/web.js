@@ -441,7 +441,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
         }catch(e){}
       }
       const warn = issues.filter(i=>/R4|R5|R7|R8/.test(i.rule)).map(i=>'⚠ ' + i.text).join('\n');
-      return {kind: 'web', text: text + (warn ? '\n\n' + warn : ''), sources: used, provider, issues,
+      return {kind: 'web', text: text + (warn ? '\n\n' + warn : ''), sources: used, provider, issues, model: r.provider + ' · ' + r.model,
         by: r.provider + ' · ' + r.model + ' · read ' + ps.length + ' pages via ' + provider + (fixed ? ' · fixed ' + fixed + ' rule break' + (fixed === 1 ? '' : 's') : '')};
     }
     const ps = passagesOf();

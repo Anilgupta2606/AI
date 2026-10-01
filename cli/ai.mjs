@@ -62,6 +62,7 @@ function engine(cfg){
   ctx.window.CustomEvent = ctx.CustomEvent;
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'engine/ai.js'), 'utf8') + '\nthis.MoneyAI = MoneyAI;', ctx);
   global.MoneyBrain = require(path.join(ROOT, 'engine/brain.js'));
+  global.MoneyBrain.reload();                                       // what the terminal or the helper learned since
   const Web = require(path.join(ROOT, 'engine/web.js'));
   return {AI: ctx.MoneyAI, Web};
 }
@@ -243,6 +244,16 @@ export function learned(){
 }
 export function forgetId(id){ const cfg = config(); engine(cfg); const L = cases().find(x=>x.id === id); if(!L) return false; global.MoneyBrain.forget(id); return true; }
 export {answer};
+export async function localModel(){
+  const cfg = config(), {AI} = engine(cfg), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, '');
+  if(!host) return '';
+  try{ const ms = ((await (await fetch(host + '/api/tags')).json()).models || []).map(m=>m.name); return ms.length ? AI.rankModels('ollama', ms, 'smart')[0] : ''; }catch(e){ return ''; }
+}
+/* the published page, on this Mac, swaps lessons with the terminal's memory (the page's sync then carries them to your phone) */
+const onlyAi = b => ({lessons: Object.fromEntries(Object.entries((b && b.lessons) || {}).filter(([, L])=>L && L.app === 'ai')),
+  forgotten: Object.fromEntries(Object.entries((b && b.forgotten) || {}).filter(([id])=>id.startsWith('ai:'))), updatedAt: (b && b.updatedAt) || 0});
+export function brainExport(){ engine(config()); return onlyAi(global.MoneyBrain.exportAll()); }
+export function brainMerge(other){ engine(config()); return global.MoneyBrain.merge(onlyAi(other)); }
 function forgetLesson(n){
   const cfg = config(); engine(cfg);
   const L = cases()[+n - 1];

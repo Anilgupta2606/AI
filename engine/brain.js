@@ -19,6 +19,9 @@ const MoneyBrain = (function(){
   const store = () => { try{ return typeof localStorage !== 'undefined' ? localStorage : null; }catch(e){ return null; } };
   const read = () => { try{ const s = store(); return JSON.parse((s && s.getItem(KEY)) || 'null') || {v: 1, lessons: {}}; }catch(e){ return {v: 1, lessons: {}}; } };
   let mem = read();
+  // another tab, or another program on this Mac (the terminal and the helper), may have learned meanwhile
+  const reload = () => { mem = read(); };
+  try{ if(typeof window !== 'undefined' && window.addEventListener) window.addEventListener('storage', e=>{ if(e.key === KEY) reload(); }); }catch(e){}
   function write(){
     mem.updatedAt = Date.now();
     try{ const s = store(); if(s) s.setItem(KEY, JSON.stringify(mem)); }catch(e){}
@@ -464,7 +467,7 @@ const MoneyBrain = (function(){
   /* Is this a real calendar date (YYYY-MM-DD)? */
   const realDate = d => { if(!/^\d{4}-\d{2}-\d{2}$/.test(String(d || ''))) return false; const x = new Date(d + 'T00:00:00Z'); return !isNaN(x) && x.toISOString().slice(0, 10) === d; };
 
-  return {learn, recall, lessons, forget, forgetAll, switchOff, pin, merge, exportAll, describe, confidenceOf,
+  return {learn, recall, lessons, forget, forgetAll, switchOff, pin, merge, exportAll, reload, describe, confidenceOf,
     fact, km, travelMin, parseHours, openDuring, planDay, categoryOf, categoryName, CATEGORIES, understand, rememberPhrase, phraseKey, verify, find, realDate, verhoeff,
     _reset: ()=>{ mem = {v: 1, lessons: {}}; }};
 })();

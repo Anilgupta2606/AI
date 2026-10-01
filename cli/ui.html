@@ -72,6 +72,8 @@ details.done summary::before{content:'▸ '} details.done[open] summary::before{
 .src a:hover{text-decoration:underline}
 .foot{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; font-size:12.5px; color:var(--mut)}
 .foot .by{font-family:var(--mono); font-size:11.5px; flex:1 1 300px}
+.model{display:inline-block; font:500 11.5px var(--mono); background:var(--card2); border:1px solid var(--line); color:var(--ink2); border-radius:999px; padding:2px 10px; margin:0 0 10px}
+@media (max-width:560px){ #where{display:block; margin:4px 0 0 0} }
 .link{background:none; border:0; padding:0; color:var(--ink2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; font-size:13px}
 .teach{display:flex; gap:8px; margin-top:10px}
 .teach input{flex:1; min-width:0; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px 12px}
@@ -97,20 +99,21 @@ details.done summary::before{content:'▸ '} details.done[open] summary::before{
 .lesson .who{font-size:12px; color:var(--mut)}
 .close{float:right}
 @media (prefers-reduced-motion: reduce){ .panel{transition:none} .trail li.now::after{animation:none} }
-@media (max-width:560px){ .status{display:none} .mark small{display:none} .hint span+span{display:none} }
+@media (max-width:560px){ .status{display:none} .hint span+span{display:none} }
 </style>
 </head>
 <body>
 <header><div class="bar">
-  <div class="mark">Money AI<small>runs on this Mac</small></div>
-  <div class="status" id="status"><span id="stSearch">Search</span></div>
+  <div class="mark">Money AI<small id="where">starting</small></div>
+  <div class="status" id="status"><span id="stSearch">Checking</span><span id="stModel" hidden></span></div>
   <button class="learnedBtn" id="openLearned">What it learned</button>
 </div></header>
 
 <main id="main">
   <section class="hello" id="hello">
     <h1>Ask anything.</h1>
-    <p>It searches the web with your own search engine, reads the pages, works out sums and dates exactly, and checks its answer against its rules before you see it.</p>
+    <p>It searches the web, reads the pages, works out sums and dates exactly, and checks its answer against its rules before you see it. On your Mac it uses your own search engine and model; anywhere else, your relay and your AI keys.</p>
+    <p class="warn" id="needSetup" hidden></p>
     <div class="tries">
       <button>What is the RBI repo rate right now?</button>
       <button>When is Diwali in 2026, and how many days away is it?</button>
@@ -137,6 +140,14 @@ details.done summary::before{content:'▸ '} details.done[open] summary::before{
 </aside>
 
 <script>
+/* Two ways to answer, the same page:
+   on your Mac  -> the helper at 127.0.0.1:8899 (your SearXNG, pages read on the Mac, the local model) — what the terminal `ai` does
+   anywhere else (a phone, the Mac asleep) -> the engine in this browser (/ai/*.js): your relay searches and reads, your AI keys
+   or the Private AI answer, held to the same rules. Lessons are swapped with the Mac whenever it is reachable, and the
+   settings sync carries them to your other devices. */
+const LOCAL_PAGE = /^(127\.0\.0\.1|localhost)$/.test(location.hostname);
+const HELPER = LOCAL_PAGE ? '' : 'http://127.0.0.1:8899';
+let mode = null;                                            // 'mac' | 'browser'
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store = {get(k, d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch(e){ return d; } }, set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }};
@@ -168,7 +179,8 @@ function turnEl(q){
 function finish(el, q, out){
   const steps = Array.from(el.querySelectorAll('.trail li')).map(li=>li.textContent.replace(/…$/, ''));
   el.querySelector('.trail').outerHTML = steps.length ? `<details class="done"><summary>How it got here (${steps.length} step${steps.length === 1 ? '' : 's'}${out.secs ? ', ' + out.secs + ' s' : ''})</summary><ul class="trail">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></details>` : '';
-  el.querySelector('.slot').innerHTML = `<div class="a">${render(out)}
+  const model = out.model || (/no AI/.test(out.by || '') ? 'Money Brain (worked out, no AI)' : '');
+  el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">${esc(model)}</span>` : ''}${render(out)}
     <div class="foot"><span class="by">${esc(out.by || '')}</span><button class="link" type="button">Wrong? Teach it</button></div></div>`;
   el.querySelector('.foot .link').onclick = () => teachBox(el, q);
 }
@@ -183,7 +195,7 @@ function teachBox(el, q){
     e.preventDefault();
     const lesson = f.querySelector('input').value.trim();
     if(lesson.length < 8) return;
-    const r = await fetch('/teach', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, lesson})}).then(r=>r.json()).catch(()=>({}));
+    const r = await api.teach(q, lesson).catch(()=>({}));
     f.outerHTML = r.ok ? '<p class="ok">Learned. Questions like this one will start with your lesson.</p>' : '<p class="err">Could not save that.</p>';
   };
 }
@@ -198,7 +210,19 @@ async function ask(q){
   step('Starting');
   const turns = history.slice(-3).flatMap(h=>[{role: 'user', content: h.q}, {role: 'assistant', content: String(h.answer.text || '').slice(0, 1500)}]);
   try{
-    const r = await fetch('/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns})});
+    await ready;
+    if(mode === 'browser'){
+      const t0 = Date.now();
+      const out = await browserAnswer(q, turns, step);
+      out.secs = Math.round((Date.now() - t0) / 1000);
+      trail.querySelector('li:first-child').remove();
+      finish(el, q, out);
+      history.push({q, answer: {text: out.text, sources: out.sources, by: out.by, secs: out.secs, model: out.model}});
+      history = history.slice(-20); store.set('moneyai.history', history);
+      busy = false; $('#ask').disabled = false; $('#q').focus();
+      return;
+    }
+    const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns})});
     if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'It answered ' + r.status);
     const reader = r.body.getReader(), dec = new TextDecoder();
     let buf = '', out = null;
@@ -219,10 +243,10 @@ async function ask(q){
     if(!out) throw new Error('No answer came back.');
     trail.querySelector('li:first-child').remove();
     finish(el, q, out);
-    history.push({q, answer: {text: out.text, sources: out.sources, by: out.by, secs: out.secs}});
+    history.push({q, answer: {text: out.text, sources: out.sources, by: out.by, secs: out.secs, model: out.model}});
     history = history.slice(-20); store.set('moneyai.history', history);
   }catch(e){
-    el.querySelector('.slot').innerHTML = `<p class="err">${esc(e.message)} — is the helper running? In Terminal: <code>launchctl kickstart -k gui/$(id -u)/com.moneyai.local</code></p>`;
+    el.querySelector('.slot').innerHTML = `<p class="err">${esc(e.message)}${mode === 'mac' ? ' — is the helper running? In Terminal: <code>launchctl kickstart -k gui/$(id -u)/com.moneyai.local</code>' : ''}</p>`;
     trail.querySelectorAll('.now').forEach(x=>x.classList.remove('now'));
   }
   busy = false; $('#ask').disabled = false; $('#q').focus();
@@ -230,7 +254,7 @@ async function ask(q){
 
 /* what it has learned */
 async function loadLearned(){
-  const d = await fetch('/learned').then(r=>r.json()).catch(()=>null);
+  const d = await api.learned().catch(()=>null);
   if(!d){ $('#learned').innerHTML = '<p class="err">Could not load.</p>'; return; }
   const cases = d.cases || [];
   $('#openLearned').textContent = 'What it learned' + (cases.length ? ' (' + cases.length + ')' : '');
@@ -238,19 +262,89 @@ async function loadLearned(){
     `<h3>Lessons from particular questions</h3>` + (cases.length ? `<ul>${cases.map(c=>`<li class="lesson">${esc(c.lesson)}<div class="foot"><span class="who">${c.taught ? 'You taught this' : 'Caught by its own check'}${c.n > 1 ? ', ' + c.n + ' times' : ''}</span><button class="link" data-id="${esc(c.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">None yet. When its check catches a mistake, or you teach it, the lesson shows here.</p>') +
     `<h3>Mistakes its check has caught</h3>` + ((d.mistakes || []).length ? `<ul>${d.mistakes.map(m=>`<li>${esc(m.text)} <span class="sub">(${m.n}×)</span></li>`).join('')}</ul>` : '<p class="sub">None yet.</p>') +
     `<h3>Rules every answer is checked against</h3><ol>${Object.values(d.rules || {}).map(r=>`<li>${esc(r)}</li>`).join('')}</ol>` +
-    `<h3>Your own rules</h3>` + ((d.yours || []).length ? `<ul>${d.yours.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : '') + `<p class="sub">Add lines starting with “- ” to ${esc(d.rulesFile)}</p>`;
+    `<h3>Your own rules</h3>` + ((d.yours || []).length ? `<ul>${d.yours.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : '') + (d.rulesFile ? `<p class="sub">Add lines starting with “- ” to ${esc(d.rulesFile)} on your Mac</p>` : '<p class="sub">Kept on your Mac (~/.money-ai/rules.md).</p>');
   $('#learned').querySelectorAll('[data-id]').forEach(b=>b.onclick = async () => {
-    await fetch('/forget', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id: b.dataset.id})});
+    await api.forget(b.dataset.id);
     loadLearned();
   });
 }
-async function health(){
-  const d = await fetch('/health').then(r=>r.json()).catch(()=>null);
-  const s = $('#stSearch');
-  s.className = d && d.search && d.search.searxng ? 'on' : 'off';
-  s.textContent = d && d.search && d.search.searxng ? 'Search engine running' : 'Search engine off';
+const showModel = (text, ok) => { const m = $('#stModel'); m.hidden = false; m.className = ok ? 'on' : 'off'; m.textContent = text; m.title = 'The AI model that answers'; $('#where').textContent += ' · ' + text; };
+/* ---------------------------------------------------------------- which way to answer */
+const post = (path, d) => fetch(HELPER + path, {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(d)}).then(r=>r.json());
+const engineHere = () => typeof MoneyWeb !== 'undefined' && typeof MoneyBrain !== 'undefined' && typeof MoneyAI !== 'undefined';
+const api = {
+  teach: (q, lesson) => mode === 'mac' ? post('/teach', {question: q, lesson}).then(r=>{ swap(); return r; })
+    : Promise.resolve((MoneyWeb.learnCase(q, [{rule: 'you'}], {text: 'For “' + q.slice(0, 90) + '”: ' + lesson}), {ok: true})),
+  learned: () => mode === 'mac' ? fetch(HELPER + '/learned').then(r=>r.json()) : Promise.resolve(browserLearned()),
+  forget: id => mode === 'mac' ? post('/forget', {id}).then(r=>{ swap(); return r; }) : Promise.resolve({ok: (MoneyBrain.forget(id), true)}),
+};
+function browserLearned(){
+  const L = MoneyBrain.lessons({app: 'ai'}).filter(x=>!x.off);
+  return {rules: MoneyWeb.RULES, yours: [], rulesFile: '',
+    mistakes: L.filter(x=>x.topic === 'mistake').sort((a, b)=>b.n - a.n).map(x=>({rule: x.key, text: MoneyWeb.RULES[x.key] || x.key, n: x.n})),
+    cases: L.filter(x=>x.topic === 'case').sort((a, b)=>a.first - b.first).map(x=>{ const r = MoneyBrain.recall('ai', 'case', x.key, {min: 0.001}); return {id: x.id, question: x.label || '', lesson: r ? r.value : '', taught: x.why === 'You corrected it', n: x.n}; })};
 }
-
+// in this browser: worked out or looked up exactly first, then your relay searches and reads and an AI answers (deep, with the rules)
+async function browserAnswer(q, turns, step){
+  step('Checking what can be worked out or looked up exactly');
+  const relayCfg = (MoneyAI.aiLocal() || {}).relay, hasAi = MoneyAI.aiAvailable();
+  const chat = hasAi ? (sys, t, o) => MoneyAI.chat(sys, t, o) : null;
+  let quick = null;
+  try{ quick = await MoneyWeb.answer(q, {factsOnly: !!(relayCfg && relayCfg.url)}); }catch(e){}
+  if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Money Brain · ' + quick.kind + ' (no AI)'}, quick);
+  if(relayCfg && relayCfg.url && relayCfg.token){
+    const relay = MoneyWeb.relay(relayCfg, {local: false});
+    return MoneyWeb.deep(q, {search: relay.search, read: relay.read, chat, onStep: step});
+  }
+  if(quick && quick.kind !== 'not-found') return hasAi && quick.passages ? MoneyWeb.rephrase(q, quick, chat).then(o=>Object.assign({model: o.by || ''}, o)) : quick;
+  if(hasAi){
+    step('Asking the AI (no web search here)');
+    const r = await MoneyAI.chat('Answer plainly and briefly. Say so when you are not sure. Today is ' + new Date().toISOString().slice(0, 10) + '.', turns.concat([{role: 'user', content: q}]), {});
+    return {text: r.text.trim(), sources: [], model: r.provider + ' · ' + r.model, by: r.provider + ' · ' + r.model + ' — from its own knowledge, not checked against the web (add the relay in Setup)'};
+  }
+  throw new Error('Nothing here can answer yet: open Setup, add the relay (web search) and a free AI key or the Private AI.');
+}
+// lessons both ways with the Mac (only the AI's), then the settings sync takes them to your other devices
+async function swap(){
+  if(LOCAL_PAGE || !engineHere()) return;
+  try{
+    const mac = await fetch(HELPER + '/brain').then(r=>r.json());
+    MoneyBrain.merge(mac);
+    const mine = MoneyBrain.exportAll();
+    const ai = {lessons: Object.fromEntries(Object.entries(mine.lessons || {}).filter(([, L])=>L.app === 'ai')), forgotten: Object.fromEntries(Object.entries(mine.forgotten || {}).filter(([id])=>id.startsWith('ai:')))};
+    await post('/brain', ai);
+    if(typeof MoneyShared !== 'undefined' && MoneyShared.quiet) MoneyShared.quiet();
+  }catch(e){}
+}
+const loadScript = src => new Promise((res, rej)=>{ const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
+async function detect(){
+  let d = null;
+  try{ d = await Promise.race([fetch(HELPER + '/health').then(r=>r.json()), new Promise((_, rej)=>setTimeout(()=>rej(new Error('slow')), 1500))]); }catch(e){}
+  if(!LOCAL_PAGE){ try{ for(const f of ['ai', 'brain', 'ask', 'web']) await loadScript('/ai/' + f + '.js'); }catch(e){} }
+  const s = $('#stSearch');
+  if(d && d.ok && d.search && d.search.searxng){
+    mode = 'mac';
+    $('#where').textContent = 'on this Mac';
+    s.className = 'on'; s.textContent = 'Your search engine';
+    showModel(d.model ? d.model + ' on this Mac' : 'No model on this Mac (ollama pull qwen3:4b-instruct)', !!d.model);
+    swap();
+  } else if(engineHere()){
+    mode = 'browser';
+    if(typeof MoneyShared !== 'undefined' && MoneyShared.quiet) MoneyShared.quiet();    // lessons from your other devices
+    const relayCfg = (MoneyAI.aiLocal() || {}).relay, hasAi = MoneyAI.aiAvailable();
+    $('#where').textContent = 'in this browser';
+    s.className = relayCfg && relayCfg.url ? 'on' : 'off';
+    s.textContent = relayCfg && relayCfg.url ? 'Web search via your relay' : 'No web search';
+    const first = hasAi ? MoneyAI.aiStatus().find(x=>!x.resting) || MoneyAI.aiStatus()[0] : null;
+    showModel(first ? first.name + (first.model ? ' · ' + first.model : '') + ' first' : 'No AI set up', !!first);
+    if(!(relayCfg && relayCfg.url) || !hasAi){ const n = $('#needSetup'); n.hidden = false; n.innerHTML = 'To answer well here, open <a href="/setup/">Setup</a> and add ' + [!(relayCfg && relayCfg.url) ? 'the relay (point 4)' : '', !hasAi ? 'a free AI key or the Private AI' : ''].filter(Boolean).join(' and ') + '.'; }
+  } else {
+    mode = 'mac';
+    $('#where').textContent = 'on this Mac';
+    s.className = 'off'; s.textContent = d && d.ok ? 'Search engine off' : 'Helper not running';
+  }
+  loadLearned();
+}
 const grow = () => { const t = $('#q'); t.style.height = 'auto'; t.style.height = Math.min(180, t.scrollHeight) + 'px'; };
 $('#q').addEventListener('input', grow);
 $('#q').addEventListener('keydown', e=>{ if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); ask($('#q').value); } });
@@ -262,7 +356,7 @@ document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('#panel').cla
 $('#clear').onclick = () => { history = []; store.set('moneyai.history', []); $('#turns').innerHTML = ''; $('#hello').hidden = false; };
 // the conversation so far comes back after a reload
 history.forEach(h=>{ const el = turnEl(h.q); finish(el, h.q, h.answer); });
-health(); loadLearned(); $('#q').focus();
+const ready = detect(); $('#q').focus();
 </script>
 </body>
 </html>
