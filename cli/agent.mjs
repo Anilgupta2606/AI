@@ -13,6 +13,8 @@ const TOOLS = [
     parameters: {type: 'object', properties: {url: {type: 'string'}, looking_for: {type: 'string', description: 'What you want to find on the page'}}, required: ['url']}}},
   {type: 'function', function: {name: 'calculate', description: 'Work out arithmetic exactly (EMI, SIP, percentages, sums). Give an expression like "(1250+750)/8" or a sentence like "EMI for 50 lakh at 8.5% for 20 years".',
     parameters: {type: 'object', properties: {expression: {type: 'string'}}, required: ['expression']}}},
+  {type: 'function', function: {name: 'market_analysis', description: 'Real prices and a technical analysis worked out in code for an index, stock, crypto, currency or commodity: trend, moving averages, RSI, MACD, Bollinger bands, support and resistance, 52-week range, recent changes and what would confirm or cancel the move. Use it for any question about a market or share: its price, trend, "will it fall/rise", technical analysis.',
+    parameters: {type: 'object', properties: {market: {type: 'string', description: 'What to analyse, as the user says it: "Nifty 50", "Indian stock market", "Sensex", "Reliance", "HDFC Bank", "bitcoin", "gold"'}, timeframe: {type: 'string', enum: ['day', 'week', 'hour'], description: 'Candle size: day (default), week or hour'}}, required: ['market']}}},
   {type: 'function', function: {name: 'read_file', description: 'Read a text file on this computer that the user mentioned.',
     parameters: {type: 'object', properties: {path: {type: 'string'}}, required: ['path']}}},
 ];
@@ -22,6 +24,9 @@ Work like a careful researcher:
 - For ANY arithmetic (multiplying a price by a quantity, totals, percentages, EMI) and for counting days between dates ("days from today to 8 November 2026"), call calculate first and use its result; never do sums or date counts in your head.
 - Search snippets can be old or wrong: before answering a factual question, open the most relevant page or two and confirm.
 - For general explanations you know well (what something is, how it works), you may answer directly.
+- You can write code: when asked, write complete, working code in a fenced Markdown block with its language (\`\`\`java … \`\`\`), then explain it briefly. Never say you cannot write code. (You cannot run it here, so say how to run it.)
+- Format answers in Markdown: short paragraphs, "- " lists for steps or points, **bold** for the key figure.
+- For markets and shares (an index, a stock, crypto, gold, a currency) — prices, trend, technical analysis, "will it fall or rise", "what do you think" — call market_analysis: it fetches real prices and works out the indicators. Never say you have no market data. Then web_search for the news behind the move. Answer with the trend, the key levels (support, resistance, averages), what the indicators lean to and what would confirm or cancel a further fall or rise. It is analysis, not a promise: no one knows the future, and do not tell the user to buy or sell.
 - Sources disagree sometimes: say so, and prefer the newest and most official.
 - When you have enough, write the answer once: clear plain sentences, every fact from a source marked with its number like [3]. Copy numbers and names exactly as the source gives them. Say what you could not find. No separate "Final answer" section, no repeating yourself.
 Do not invent sources or numbers.`;
@@ -71,6 +76,15 @@ export async function runAgent(question, o){
       const r = o.calc(String(args.expression || ''));
       return r || 'Could not work that out — write it as a plain expression, like (1250+750)/8.';
     }
+    if(name === 'market_analysis'){
+      if(!o.market) return 'Market data is not available here.';
+      const tf = String(args.timeframe || 'day');
+      step('📈 Analysing: ' + String(args.market || question).slice(0, 50) + ' (' + tf + ')');
+      const a = await o.market(String(args.market || question), tf);
+      usedSearch.add('market prices');
+      const n = numberOf(a.url, a.name + ' — ' + tf + ' prices, analysed here', a.text);
+      return `[${n}] ${a.text}`;
+    }
     if(name === 'read_file'){
       const p = path.resolve(String(args.path || ''));
       const allowed = (o.files || []).map(f=>path.resolve(f)).includes(p) || p.startsWith(process.cwd() + path.sep);
@@ -102,11 +116,11 @@ export async function runAgent(question, o){
     }
     let text = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     // a small model sometimes writes the call instead of making it: web_search("…"), {"name": "calculate", …}
-    const written = /^\W*(web_search|open_page|calculate|read_file)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
-      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
-      (()=>{ try{ const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); const a = j.arguments || j.parameters || {}; return j.name && /^(web_search|open_page|calculate|read_file)$/.test(j.name) ? [null, j.name, a.query || a.url || a.expression || a.path || ''] : null; }catch(e){ return null; } })();
+    const written = /^\W*(web_search|open_page|calculate|read_file|market_analysis)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
+      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file|market_analysis)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
+      (()=>{ try{ const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); const a = j.arguments || j.parameters || {}; return j.name && /^(web_search|open_page|calculate|read_file|market_analysis)$/.test(j.name) ? [null, j.name, a.query || a.url || a.expression || a.path || ''] : null; }catch(e){ return null; } })();
     if(written && written[2] && turn < 9){
-      const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path'}[name];
+      const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path', market_analysis: 'market'}[name];
       messages.push({role: 'assistant', content: '', tool_calls: [{function: {name, arguments: {[key]: arg}}}]});
       let result;
       try{ result = await run(name, {[key]: arg}); }catch(e){ result = 'That did not work: ' + e.message; }
@@ -164,7 +178,7 @@ export async function runAgent(question, o){
     // a source number that points to nothing read is taken out
     text = text.replace(/\s*\[(\d+)\]/g, (m, n)=>sources.some(s=>s.n === +n) ? m : '');
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
-    return {text, model: (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
+    return {text, read: sources.filter(s=>!cited.has(s.n) && /^https?:/.test(s.url)).slice(0, 8).map(s=>({i: s.n, title: s.title, url: s.url})), model: (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
       by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
         (o.review ? ' · rules: ' + (firstIssues && firstIssues.length ? firstIssues.length + ' caught, ' + Math.max(0, firstIssues.length - issuesLeft.length) + ' fixed' : 'all kept') : ''),
       issues: issuesLeft};

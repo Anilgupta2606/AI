@@ -24,6 +24,7 @@ import vm from 'vm';
 import readline from 'readline';
 import * as Local from './local.mjs';
 import {runAgent} from './agent.mjs';
+import * as Market from './market.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +83,7 @@ const FILE_TYPES = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|yaml|yml|ini|j
 async function answer(question, o){
   const cfg = config(), {AI, Web} = engine(cfg), S = await searcher(cfg);
   const hasAi = AI.aiAvailable() && !o.noAi;
-  const step = t => { if(o.onStep) return o.onStep(t); if(o.json || !tty) return; if(/^[🔎📄🧮📂]/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
+  const step = t => { if(o.onStep) return o.onStep(t); if(o.json || !tty) return; if(/^[🔎📄🧮📂📈]/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
   const done = () => { if(!o.json && tty && !o.onStep) process.stderr.write('\r\x1b[K'); };
   const chat = hasAi ? (system, turns, opts) => AI.chat(system, (o.history || []).concat(turns), Object.assign({}, opts, {onProgress: t=>step(t)})) : null;
   // a file: its text is a source too
@@ -93,7 +94,9 @@ async function answer(question, o){
     fileSources.push({title: path.basename(f), url: 'file://' + path.resolve(f), content: fs.readFileSync(f, 'utf8').slice(0, 60000)});
   }
   // 1. worked out or looked up exactly (sums, rates, weather, time, meanings, facts) — unless a file is given
-  if(!fileSources.length && !o.deep){
+  // a follow-up ("and for 10 years?", "what about Bank Nifty?") needs the conversation, so it goes to the model, not the quick tools
+  const followUp = (o.history || []).length && /^(and|also|what about|how about|then|so|but|same|now|ok|okay|why|what if)\b|\b(it|that|this|those|them|these|same|above|previous|earlier)\b/i.test(question.trim()) && question.trim().split(/\s+/).length < 14;
+  if(!fileSources.length && !o.deep && !followUp){
     step('Checking what can be worked out or looked up exactly…');
     const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
     if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick); }
@@ -141,7 +144,7 @@ async function answer(question, o){
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
       const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step,
-        review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
+        market: (q, tf) => Market.analyse(q, tf), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
   }

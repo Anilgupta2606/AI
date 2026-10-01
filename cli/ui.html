@@ -103,7 +103,19 @@ details.how .steps{margin:10px 0 4px}
 .warn{background:var(--warn-bg); color:var(--warn-ink); border-radius:12px; padding:10px 13px; font-size:14px; margin:0 0 10px}
 .ok{color:var(--ok); font-size:14px; font-weight:500}
 .sub{color:var(--mut); font-size:13.5px}
-.src{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:8px; margin:16px 0 0; padding:0; list-style:none}
+.a h4{font:700 16.5px var(--display); margin:16px 0 6px}
+.a ul,.a ol{margin:0 0 10px; padding-left:22px} .a li{margin:0 0 4px}
+.a code{font-family:var(--mono); font-size:.86em; background:var(--page2); padding:1px 6px; border-radius:6px}
+.code{margin:12px 0; border-radius:14px; overflow:hidden; background:#16152f; border:1px solid #2a2850}
+.codehead{display:flex; justify-content:space-between; align-items:center; padding:6px 12px; font:600 12px var(--mono); color:#a9a6d8; background:#1e1d40}
+.copy{background:none; border:1px solid #3a3870; color:#d9d6ff; border-radius:8px; padding:2px 10px; font:600 12px var(--body); cursor:pointer}
+.copy:hover{border-color:var(--read); color:var(--read)}
+.code pre{margin:0; padding:14px 16px; overflow-x:auto} .code pre code{background:none; padding:0; color:#ecebff; font:13px/1.6 var(--mono); white-space:pre; font-variant-ligatures:none}
+.srchead{font-size:12.5px; font-weight:700; color:var(--mut); margin:18px 0 0}
+.src{margin-top:8px!important}
+details.also{margin-top:10px} details.also summary{cursor:pointer; font-size:13px; color:var(--mut); font-weight:600}
+.memory{margin:14px 0 0; font-size:13px; color:var(--mut); background:var(--page); border:1px dashed var(--line); border-radius:12px; padding:8px 12px}
+.src{display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:8px; margin:16px 0 0; padding:0!important; list-style:none}
 .src a{display:flex; gap:10px; align-items:center; text-decoration:none; background:var(--page); border:1px solid var(--line); border-radius:12px; padding:8px 10px; min-width:0}
 .src a:hover{border-color:var(--search)}
 .src .av{width:26px; height:26px; border-radius:8px; display:grid; place-items:center; color:#fff; font:700 12px var(--body); flex:none}
@@ -207,26 +219,51 @@ let history = store.get('moneyai.history', []);          // [{q, answer, steps}]
 let busy = false;
 
 /* a step's kind (its colour), from what the engine says it is doing */
-const kindOf = t => /^🔎|search/i.test(t) ? 'search' : /^📄|^📂|read/i.test(t) ? 'read' : /^🧮|calculat|worked out/i.test(t) ? 'calc' : /rules|check/i.test(t) ? 'check' : 'think';
-const tidyStep = t => String(t).replace(/^[🔎📄🧮📂]\s*/u, '').replace(/…$/, '');
+const kindOf = t => /^🔎|search/i.test(t) ? 'search' : /^📄|^📂|read/i.test(t) ? 'read' : /^🧮|^📈|calculat|analys|worked out/i.test(t) ? 'calc' : /rules|check/i.test(t) ? 'check' : 'think';
+const tidyStep = t => String(t).replace(/^[🔎📄🧮📂📈]\s*/u, '').replace(/…$/, '');
 const stepHtml = (s, now) => `<span class="step ${s.k}${now ? ' now' : ''}" title="${esc(s.t)}"><span>${esc(s.t)}</span></span>`;
 const host = u => { try{ return new URL(u).hostname.replace(/^www\./, ''); }catch(e){ return ''; } };
 const hue = s => { let h = 0; for(const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
 
-/* an answer's text as paragraphs: [n] become links to its sources, ⚠ lines become notices */
+/* an answer's text, written in Markdown by the model: code blocks (with a Copy button), headings, lists, bold, `code`,
+   and [n] linked to its sources; ⚠ lines become notices. Everything is escaped first — the model's text never runs. */
+function inline(t, urls){
+  return esc(t).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<i>$2</i>')
+    .replace(/\s?\[(\d+)\]/g, (m, n)=>urls[n] && !/^file:/.test(urls[n]) ? `<sup><a href="${esc(urls[n])}" target="_blank" rel="noopener">${n}</a></sup>` : `<sup><a>${n}</a></sup>`);
+}
+function markdown(text, urls){
+  const out = [], codes = [];
+  text = String(text || '').replace(/```[ \t]*([\w+#.-]*)[^\n]*\n([\s\S]*?)(?:```|$)/g, (m, lang, code)=>{ codes.push({lang, code: code.replace(/\n$/, '')}); return '\n\u0000' + (codes.length - 1) + '\u0000\n'; });
+  const lines = text.split('\n');
+  let para = [], list = null;
+  const flushPara = () => { if(para.length){ const b = para.join('\n').trim(); if(b) out.push(/^⚠/.test(b) ? `<div class="warn">${inline(b, urls).replace(/\n/g, '<br>')}</div>` : /^✔/.test(b) ? `<p class="ok">${inline(b, urls)}</p>` : `<p>${inline(b, urls).replace(/\n/g, '<br>')}</p>`); para = []; } };
+  const flushList = () => { if(list){ out.push(`<${list.tag}>${list.items.map(i=>`<li>${inline(i, urls)}</li>`).join('')}</${list.tag}>`); list = null; } };
+  for(const line of lines){
+    const code = /^\u0000(\d+)\u0000$/.exec(line.trim());
+    const head = /^(#{1,4})\s+(.+)/.exec(line);
+    const item = /^\s*(?:([-*•])|(\d+)[.)])\s+(.+)/.exec(line);
+    if(code){ flushPara(); flushList(); const c = codes[+code[1]];
+      out.push(`<div class="code"><div class="codehead"><span>${esc(c.lang || 'code')}</span><button class="copy" type="button">Copy</button></div><pre><code>${esc(c.code)}</code></pre></div>`); continue; }
+    if(head){ flushPara(); flushList(); out.push(`<h4>${inline(head[2], urls)}</h4>`); continue; }
+    if(item){ flushPara(); const tag = item[2] ? 'ol' : 'ul'; if(!list || list.tag !== tag){ flushList(); list = {tag, items: []}; } list.items.push(item[3]); continue; }
+    if(!line.trim()){ flushPara(); flushList(); continue; }
+    if(/^[⚠✔]/.test(line.trim())){ flushPara(); flushList(); para = [line]; flushPara(); continue; }
+    flushList(); para.push(line);
+  }
+  flushPara(); flushList();
+  return out.join('');
+}
+const srcCard = (s, i) => { const h = host(s.url) || s.title || ''; const web = s.url && !/^file:/.test(s.url);
+  return `<li><a ${web ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : ''} title="${esc(s.url || s.title)}"><span class="av" style="background:hsl(${hue(h)} 65% 55%)">${esc((h || '?')[0].toUpperCase())}</span><span class="tx"><b>${esc(s.title || h)}</b><small>${s.i || i + 1} · ${esc(h)}</small></span></a></li>`; };
 function render(out){
-  const urls = {}; (out.sources || []).forEach((s, i)=>{ urls[s.i || i + 1] = s.url; });
-  const blocks = String(out.text || '').split(/\n\s*\n|\n(?=⚠|✔)/).map(b=>b.trim()).filter(Boolean);
-  const html = blocks.map(b=>{
-    let h = esc(b).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')
-      .replace(/\s?\[(\d+)\]/g, (m, n)=>urls[n] && !/^file:/.test(urls[n]) ? `<sup><a href="${esc(urls[n])}" target="_blank" rel="noopener">${n}</a></sup>` : `<sup><a>${n}</a></sup>`);
-    if(/^⚠/.test(b)) return `<div class="warn">${h}</div>`;
-    if(/^✔/.test(b)) return `<p class="ok">${h}</p>`;
-    return `<p>${h}</p>`;
-  }).join('');
-  const src = (out.sources || []).length ? `<ul class="src">${out.sources.map((s, i)=>{ const h = host(s.url) || s.title || ''; const web = s.url && !/^file:/.test(s.url);
-    return `<li><a ${web ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : ''} title="${esc(s.url || s.title)}"><span class="av" style="background:hsl(${hue(h)} 65% 55%)">${esc((h || '?')[0].toUpperCase())}</span><span class="tx"><b>${esc(s.title || h)}</b><small>${s.i || i + 1} · ${esc(h)}</small></span></a></li>`; }).join('')}</ul>` : '';
-  return html + src;
+  const urls = {}; (out.sources || []).concat(out.read || []).forEach((s, i)=>{ urls[s.i || i + 1] = s.url; });
+  const cited = out.sources || [], also = (out.read || []).filter(r=>!cited.some(c=>c.url === r.url));
+  const usedModel = !/no AI/.test(out.by || '');
+  let src = '';
+  if(cited.length) src += `<div class="srchead">Sources</div><ul class="src">${cited.map(srcCard).join('')}</ul>`;
+  if(also.length) src += `<details class="also"><summary>Also read ${also.length} page${also.length === 1 ? '' : 's'}</summary><ul class="src">${also.map(srcCard).join('')}</ul></details>`;
+  if(!cited.length && !also.length && usedModel) src += `<p class="memory">From the model's own knowledge — no web pages were read for this answer.</p>`;
+  return markdown(out.text, urls) + src;
 }
 function turnEl(q){
   const el = document.createElement('section');
@@ -278,7 +315,7 @@ async function ask(q){
   const done = out => {
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
     finish(el, q, out, steps);
-    history.push({q, answer: {text: out.text, sources: out.sources, by: out.by, secs: out.secs, model: out.model}, steps});
+    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model}, steps});
     history = history.slice(-20); store.set('moneyai.history', history);
   };
   try{
@@ -410,6 +447,9 @@ const grow = () => { const t = $('#q'); t.style.height = 'auto'; t.style.height 
 const hour = new Date().getHours();
 $('#greet').firstChild.textContent = hour < 5 ? 'Up late?' : hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.';
 $('#q').addEventListener('input', grow);
+document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('.copy'); if(!b) return;
+  const code = b.closest('.code').querySelector('code').textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(()=>{ b.textContent = 'Copied'; setTimeout(()=>{ b.textContent = 'Copy'; }, 1500); }).catch(()=>{ b.textContent = 'Select and copy'; }); });
 $('#q').addEventListener('keydown', e=>{ if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); ask($('#q').value); } });
 $('#form').onsubmit = e => { e.preventDefault(); ask($('#q').value); };
 document.querySelectorAll('.tries button').forEach(b=>b.onclick = () => ask(b.dataset.q));
