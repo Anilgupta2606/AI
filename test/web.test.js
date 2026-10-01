@@ -31,3 +31,8 @@ test('rules: mistakes are remembered for next time', ()=>{
   assert.match(m[0], /forecast/); assert.match(m[0], /2 times/);
   assert.strictEqual(m.length, 2);
 });
+test('rules: what is dated after today has not happened yet', ()=>{
+  const c = {sources: [{n: 2, title: 'x', text: 'MPC meeting October 5 to 7, 2026. kept unchanged at 5.25%'}], today: '2026-10-01'};
+  assert.deepStrictEqual(W.review('The decision was made at the meeting held from October 5 to 7, 2026 [2].', c).map(i=>i.rule), ['R10']);
+  assert.deepStrictEqual(W.review('The next meeting will be held from October 5 to 7, 2026 [2].', c), []);
+});

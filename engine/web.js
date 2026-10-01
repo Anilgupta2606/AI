@@ -461,7 +461,17 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     R7: 'A forecast is reported as a forecast, not as a decision',
     R8: 'Names in the answer appear in the sources',
     R9: 'Answer once: no "Final answer" section, no repeating',
+    R10: 'Something dated after today has not happened yet',
   };
+  // dates written in a sentence ("5 to 7 October 2026", "October 5, 2026", "2026-10-05") -> [Date]
+  const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+  function datesIn(t){
+    const out = [], mo = m => MONTHS.indexOf(String(m).slice(0, 3).toLowerCase());
+    for(const m of String(t).matchAll(/\b(\d{1,2})(?:st|nd|rd|th)?(?:\s*(?:to|-|–|and)\s*\d{1,2}(?:st|nd|rd|th)?)?\s+([A-Z][a-z]{2,8}),?\s+(\d{4})\b/g)) if(mo(m[2]) >= 0) out.push(new Date(Date.UTC(+m[3], mo(m[2]), +m[1])));
+    for(const m of String(t).matchAll(/\b([A-Z][a-z]{2,8})\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*(?:to|-|–|and)\s*\d{1,2})?,?\s+(\d{4})\b/g)) if(mo(m[1]) >= 0) out.push(new Date(Date.UTC(+m[3], mo(m[1]), +m[2])));
+    for(const m of String(t).matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)) out.push(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])));
+    return out;
+  }
   const COMMON = new Set(('The This That These Those There Here It Its In On At For From With By And Or But If As To Of A An According However Also Additionally ' +
     'Today Yesterday Tomorrow Note Sources Source Yes No January February March April May June July August September October November December ' +
     'Monday Tuesday Wednesday Thursday Friday Saturday Sunday I We You They He She Final Answer Thus Therefore So Overall Currently Latest').split(' '));
@@ -487,7 +497,15 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       else out.push({rule: 'R5', text: m[0].trim() + ' is wrong; it is ' + (Math.round(want * 100) / 100).toLocaleString('en-IN') + '. Use calculate.'});
     }
     // R6: day counts only from the calculator
-    for(const m of bare.matchAll(/\b(\d+)\s+(days?|weeks?)\b/gi)) if(!new RegExp('\\b' + m[1] + '\\s+(days?|weeks?)', 'i').test(String(c.extra || ''))) { out.push({rule: 'R6', text: '"' + m[0] + '" was not worked out with calculate.'}); break; }
+    const counts = Array.from(bare.matchAll(/\b(\d+)\s+(days?|weeks?)\b/gi)).filter(m=>!new RegExp('\\b' + m[1] + '\\s+(days?|weeks?)', 'i').test(String(c.extra || ''))).map(m=>'"' + m[0] + '"');
+    if(counts.length) out.push({rule: 'R6', text: Array.from(new Set(counts)).join(', ') + ' — not worked out with calculate; do not add days up yourself.'});
+    // R10: told as done, but dated after today
+    const today = new Date((c.today || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
+    const PAST = /\b(was|were|did|has been|had|kept|held|made|decided|announced|cut|raised|left|voted|confirmed|happened|took place)\b/i, FUTURE = /\b(will|scheduled|upcoming|due|expected|is to|are to|yet to|not yet|has not|hasn't|plans?)\b/i;
+    for(const x of sentencesOf(bare)){
+      const after = datesIn(x).filter(d=>d > today);
+      if(after.length && PAST.test(x) && !FUTURE.test(x)){ out.push({rule: 'R10', text: after[0].toISOString().slice(0, 10) + ' is after today (' + today.toISOString().slice(0, 10) + '), so "' + x.trim().slice(0, 80) + '" cannot have happened yet — check the source\'s date (it may be an older year).'}); break; }
+    }
     // R4: numbers not in what was read (a year, a list number and small counts are fine)
     if(c.sources && c.sources.length){
       const foreign = Array.from(new Set(nums(bare.replace(/(^|\n)\s*\d+[.)]\s/g, ' ')).filter(n=>!have.has(n) && !/^(19|20)\d\d$/.test(n) && (n.length >= 3 || /\./.test(n)))));
@@ -564,7 +582,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, review, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, datesIn, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;

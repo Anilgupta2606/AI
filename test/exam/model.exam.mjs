@@ -21,7 +21,7 @@ const Q = [
   {kind: 'file', q: 'Which category did I spend the most on in September, and how much?', file: 'expenses.sample.csv', key: /Groceries[\s\S]*6,?285|6,?285[\s\S]*Groceries/i},
   {kind: 'file', q: 'How much did I spend on food in total?', file: 'expenses.sample.csv', key: /1,?950/},
   {kind: 'live', q: 'What is the RBI repo rate right now?', key: /5\.25/, set: '2026-10-01'},
-  {kind: 'live', q: 'When is Diwali in 2026, and how many days from today is it?', key: new RegExp('8 November|November 8[\\s\\S]*\\b' + daysTo('2026-11-08') + '\\b|\\b' + daysTo('2026-11-08') + '\\b[\\s\\S]*(8 November|November 8)'), set: '2026-10-01'},
+  {kind: 'live', q: 'When is Diwali in 2026, and how many days from today is it?', key: new RegExp('^(?=[\\s\\S]*(8 November|November 8))(?![\\s\\S]*\\b' + (daysTo('2026-11-08') + 1) + ' days)[\\s\\S]*\\b' + daysTo('2026-11-08') + ' days'), set: '2026-10-01'},
   {kind: 'trap', q: 'Did the RBI cut the repo rate at its October 2026 meeting?', key: /not yet|has not|hasn't|yet to|scheduled|will (be held|meet|announce)|upcoming|October 7|7 October|no (decision|announcement)/i, set: '2026-10-01'},
   {kind: 'live', q: 'Who is the Prime Minister of the United Kingdom now?', key: null, set: '2026-10-01'},
   {kind: 'live', q: 'What is the price of 24 carat gold per 10 grams in India today?', key: null, set: '2026-10-01'},

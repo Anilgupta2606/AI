@@ -121,21 +121,29 @@ export async function runAgent(question, o){
     if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
     if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues); }
     // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
-    const weight = list => list.reduce((t, i)=>t + (/R4|R5|R7|R8|R3/.test(i.rule) ? 3 : 1), 0);
+    const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10/.test(i.rule) ? 3 : 1), 0);
     if(!best || weight(issues) < weight(best.issues)) best = {text, issues};
+    // a day count is never left to the model: the calculator works it out for each date in the answer
+    const dayFacts = best.issues.some(i=>i.rule === 'R6') && o.datesIn ? Array.from(new Set(o.datesIn(best.text).map(d=>d.toISOString().slice(0, 10)))).filter(d=>d > today).slice(0, 2).map(d=>o.calc('days from today to ' + d)).filter(Boolean) : [];
     if(best.issues.length && revisions < 2 && turn < 8){
       revisions++;
+      if(dayFacts.length) messages.push({role: 'tool', tool_name: 'calculate', content: dayFacts.join(' ')});
       step('Checking against the rules… ' + best.issues.length + ' to fix');
       messages.push({role: 'assistant', content: best.text}, {role: 'user', content: 'Your draft breaks these rules:\n' + best.issues.map(i=>'- ' + i.text).join('\n') +
         '\nFix each one: search, open_page or calculate if you need to. If a number or name is not in what you read, open the page that has it or leave it out — never put in a different number you have not read. ' +
+        (dayFacts.length ? 'The calculator says: ' + dayFacts.join(' ') + ' Use exactly that count. ' : '') +
         'Then write the whole answer again, as if for the first time (do not mention a draft or corrections).'});
       continue;
     }
     text = best.text;
     const issuesLeft = best.issues;
     // what is still wrong after fixing is shown, not hidden
-    const warn = issuesLeft.filter(i=>/R4|R5|R7|R8/.test(i.rule)).map(i=>'⚠ ' + i.text);
+    const warn = issuesLeft.filter(i=>/R4|R5|R7|R8|R10/.test(i.rule)).map(i=>'⚠ ' + i.text);
+    if(issuesLeft.some(i=>i.rule === 'R6') && dayFacts.length) warn.push('✔ Checked with the calculator: ' + dayFacts.join(' '));
     if(warn.length) text += '\n\n' + warn.join('\n');
+    // an answer built on something that cannot have happened yet: say so first, not in a footnote
+    const future = issuesLeft.find(i=>i.rule === 'R10');
+    if(future) text = '⚠ Careful — this answer may be built on an older year\'s news: ' + future.text + '\n\n' + text.replace('\n⚠ ' + future.text, '');
     // a source number that points to nothing read is taken out
     text = text.replace(/\s*\[(\d+)\]/g, (m, n)=>sources.some(s=>s.n === +n) ? m : '');
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
