@@ -2,7 +2,8 @@
 /* =========================================================
    LOCAL HELPER — the relay's job done on this Mac, for the website: the apps' Ask asks here first
    (your SearXNG to search, pages read here), and the Cloudflare relay (with keys) only when this is not
-   reachable — on a phone, or when this Mac is off. No keys; it answers only your site, only from this Mac.
+   reachable — on a phone, or when this Mac is off. No keys; it answers only your site's pages (they send their Origin),
+   only on this Mac, and never opens addresses on this Mac or your home network.
      GET /health   GET /search?q=…&n=8   GET /read?url=…&links=1      (the same as the Cloudflare relay)
    Started at login by ~/Library/LaunchAgents/com.moneyai.local.plist (ai serve runs it by hand).
    ========================================================= */
@@ -21,8 +22,8 @@ export function serve(port){
     const send = (status, data) => { res.writeHead(status, headers(origin)); res.end(JSON.stringify(data)); };
     if(req.method === 'OPTIONS'){ res.writeHead(204, headers(origin)); return res.end(); }
     // only your site (or this Mac itself) may use it
-    if(origin && !ALLOWED.some(r=>r.test(origin))) return send(403, {error: 'Not allowed.'});
     const u = new URL(req.url, 'http://local');
+    if(u.pathname !== '/health' && !ALLOWED.some(r=>r.test(origin))) return send(403, {error: 'Not allowed.'});
     try{
       if(u.pathname === '/health') return send(200, {ok: true, local: true, search: {searxng: await Local.searxngUp()}, reader: 'this Mac'});
       if(u.pathname === '/search'){

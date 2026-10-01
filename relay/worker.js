@@ -104,7 +104,7 @@ export default {
     // an hour's cache: the same question or page does not spend the free quota twice
     const cache = caches.default, key = new Request(u.toString(), {method: 'GET'});
     const hit = await cache.match(key);
-    if(hit){ const res = new Response(hit.body, hit); Object.entries(cors(origin)).forEach(([k, v])=>res.headers.set(k, v)); res.headers.set('x-cache', 'hit'); return res; }
+    if(hit){ const res = new Response(hit.body, hit); ['access-control-allow-origin', 'access-control-allow-headers', 'access-control-allow-methods', 'access-control-max-age'].forEach(h=>res.headers.delete(h)); Object.entries(cors(origin)).forEach(([k, v])=>res.headers.set(k, v)); res.headers.set('x-cache', 'hit'); return res; }
     let out;
     try{
       if(u.pathname === '/search'){

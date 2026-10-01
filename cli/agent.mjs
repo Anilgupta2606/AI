@@ -25,16 +25,20 @@ Work like a careful researcher:
 - Sources disagree sometimes: say so, and prefer the newest and most official.
 - When you have enough, write the answer once: clear plain sentences, every fact from a source marked with its number like [3]. Copy numbers and names exactly as the source gives them. Say what you could not find. No separate "Final answer" section, no repeating yourself.
 Do not invent sources or numbers.`;
+// the rules every answer is held to, your own rules (~/.money-ai/rules.md) and the mistakes it made before
+const RULEBOOK = o => (o.rules && o.rules.length ? '\nRules (your draft is checked against them and sent back if it breaks one):\n' + o.rules.map(r=>'- ' + r).join('\n') : '') +
+  (o.userRules ? '\nThe user\'s own rules:\n' + o.userRules : '') +
+  (o.mistakes && o.mistakes.length ? '\nMistakes you made before — do not repeat them:\n' + o.mistakes.map(m=>'- ' + m).join('\n') : '');
 
 export async function runAgent(question, o){
   const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
   const today = new Date().toISOString().slice(0, 10);
   const sources = [];                                             // everything read, numbered as the model sees it
   const numberOf = (url, title, text) => { let s = sources.find(x=>x.url === url); if(!s){ s = {n: sources.length + 1, url, title: title || url, text: ''}; sources.push(s); } if(text) s.text += ' ' + text; return s.n; };
-  const messages = [{role: 'system', content: SYSTEM(today)}].concat(o.history || [], [{role: 'user', content: question}]);
+  const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o)}].concat(o.history || [], [{role: 'user', content: question}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = /\b(today|now|latest|current|currently|this (week|month|year)|recent|news|live|price|rate|score|update|who is|who won|when is|when was|how much|how many days|days (left|until|till|to))\b/i.test(question);
-  let nudged = false, nudgedOpen = false, searches = 0, opened = 0;
+  let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
   const run = async (name, args) => {
     if(name === 'web_search'){
@@ -92,6 +96,7 @@ export async function runAgent(question, o){
       continue;
     }
     let text = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    if(!text && best) text = best.text;                            // out of steps mid-fix: the best draft so far stands
     // a question about now, answered from memory: look it up first (once)
     if(!searches && !nudged && timely && turn < 8){
       nudged = true;
@@ -103,41 +108,41 @@ export async function runAgent(question, o){
       messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.'});
       continue;
     }
-    // a day count must come from the calculator, never from the model's head (once)
-    const calcOut = messages.filter(m=>m.role === 'tool' && m.tool_name === 'calculate').map(m=>m.content).join(' ');
-    const counts = Array.from(text.matchAll(/(\d+)\s+(days?|weeks?)\b/gi)).map(m=>m[1]);
-    if(counts.some(n=>!new RegExp('\\b' + n + '\\b').test(calcOut)) && !o._nudgedCalc && turn < 8){
-      o._nudgedCalc = true;
-      messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Check the day count with calculate (for example "days from today to <the date you found>") and answer with its result.'});
-      continue;
-    }
     // searched but read nothing: snippets are often old or partial — open a page or two and confirm (once)
     if(searches && !opened && !nudgedOpen && turn < 8){
       nudgedOpen = true;
       messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Before you answer: open the one or two most relevant result pages with open_page and confirm the facts (snippets can be old or wrong). Then answer.'});
       continue;
     }
-    // every figure in the answer must be in what was read
-    const nums = t => (t.match(/\d[\d,.]*\d|\d/g) || []).map(x=>x.replace(/,/g, '').replace(/\.$/, '')).filter(x=>x.length >= 3);
-    const read = sources.map(s=>s.title + ' ' + s.text).join(' ') + ' ' + messages.filter(m=>m.role === 'tool').map(m=>m.content).join(' ');
-    const have = new Set(nums(read));
-    // sums written in the answer ("A × B = C") are worked out again: a right result counts as known, a wrong one is pointed out
-    const val = x => parseFloat(String(x).replace(/[₹,\s]/g, ''));
-    const wrongSums = [];
-    for(const m of text.matchAll(/(₹?\s?[\d,]+(?:\.\d+)?)\s*([×x*\/+−-])\s*(₹?\s?[\d,]+(?:\.\d+)?)\s*=\s*(₹?\s?[\d,]+(?:\.\d+)?)/g)){
-      const a = val(m[1]), b = val(m[3]), c = val(m[4]);
-      const want = m[2] === '/' ? a / b : m[2] === '+' ? a + b : /[−-]/.test(m[2]) ? a - b : a * b;
-      if(Math.abs(want - c) <= Math.max(0.011, Math.abs(want) * 0.0005)) nums(m[4]).forEach(n=>have.add(n));
-      else wrongSums.push(m[0].trim() + ' (it is ' + (Math.round(want * 100) / 100).toLocaleString('en-IN') + ')');
+    // the draft is checked against the rules; what breaks them goes back to the model (twice at most) to fix with its tools
+    const toolOut = messages.filter(m=>m.role === 'tool').map(m=>m.content).join(' ');
+    const calcOut = messages.filter(m=>m.role === 'tool' && m.tool_name === 'calculate').map(m=>m.content).join(' ');
+    const issues = o.review ? o.review(text, {question, sources, extra: calcOut + ' ' + toolOut, searched: searches > 0, timely}) : [];
+    if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
+    if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues); }
+    // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
+    const weight = list => list.reduce((t, i)=>t + (/R4|R5|R7|R8|R3/.test(i.rule) ? 3 : 1), 0);
+    if(!best || weight(issues) < weight(best.issues)) best = {text, issues};
+    if(best.issues.length && revisions < 2 && turn < 8){
+      revisions++;
+      step('Checking against the rules… ' + best.issues.length + ' to fix');
+      messages.push({role: 'assistant', content: best.text}, {role: 'user', content: 'Your draft breaks these rules:\n' + best.issues.map(i=>'- ' + i.text).join('\n') +
+        '\nFix each one: search, open_page or calculate if you need to. If a number or name is not in what you read, open the page that has it or leave it out — never put in a different number you have not read. ' +
+        'Then write the whole answer again, as if for the first time (do not mention a draft or corrections).'});
+      continue;
     }
-    if(wrongSums.length) text += '\n\n⚠ A sum in this answer is wrong: ' + wrongSums.join('; ') + '.';
-    const foreign = sources.length ? Array.from(new Set(nums(text.replace(/\[\d+\]/g, '').replace(/⚠[^\n]*/g, '')).filter(n=>!have.has(n) && !/^(19|20)\d\d$/.test(n)))) : [];
-    if(foreign.length) text += '\n\n⚠ Not found in what I read: ' + foreign.slice(0, 4).join(', ') + ' — check before relying on ' + (foreign.length === 1 ? 'it' : 'them') + '.';
+    text = best.text;
+    const issuesLeft = best.issues;
+    // what is still wrong after fixing is shown, not hidden
+    const warn = issuesLeft.filter(i=>/R4|R5|R7|R8/.test(i.rule)).map(i=>'⚠ ' + i.text);
+    if(warn.length) text += '\n\n' + warn.join('\n');
     // a source number that points to nothing read is taken out
     text = text.replace(/\s*\[(\d+)\]/g, (m, n)=>sources.some(s=>s.n === +n) ? m : '');
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
     return {text, sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
-      by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '')};
+      by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
+        (o.review ? ' · rules: ' + (firstIssues && firstIssues.length ? firstIssues.length + ' caught, ' + Math.max(0, firstIssues.length - issuesLeft.length) + ' fixed' : 'all kept') : ''),
+      issues: issuesLeft};
   }
   return {text: 'I could not finish within 10 steps. Try a narrower question.', sources: []};
 }

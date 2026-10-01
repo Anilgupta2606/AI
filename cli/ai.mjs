@@ -9,6 +9,7 @@
      ai --json "question"       the answer as JSON (for scripts)
      ai setup                   keys for the search services and the AIs (kept in ~/.money-ai/, only on this Mac)
      ai status                  what is set up
+     ai rules                   the rules every answer is checked against, yours (~/.money-ai/rules.md) and its past mistakes
    The same engine as the apps (engine/*.js); the same search and reading as the relay (relay/worker.js) — here with
    no relay, since a terminal may call the services directly.
    ========================================================= */
@@ -26,7 +27,9 @@ const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const HOME = path.join(os.homedir(), '.money-ai');
-const CONFIG = path.join(HOME, 'config.json'), STORE = path.join(HOME, 'store.json');
+const CONFIG = path.join(HOME, 'config.json'), STORE = path.join(HOME, 'store.json'), RULES_FILE = path.join(HOME, 'rules.md');
+// your own rules: one per line starting with "- " (the rest of the file is notes)
+const userRules = () => { try{ return fs.readFileSync(RULES_FILE, 'utf8').split('\n').filter(l=>/^\s*[-*]\s+\S/.test(l)).map(l=>l.replace(/^\s*[-*]\s+/, '').trim()).slice(0, 20); }catch(e){ return []; } };
 const tty = process.stdout.isTTY, C = (n, s) => tty ? `\x1b[${n}m${s}\x1b[0m` : s;
 const dim = s => C(2, s), bold = s => C(1, s), cyan = s => C(36, s), yellow = s => C(33, s), red = s => C(31, s), green = s => C(32, s);
 
@@ -133,7 +136,9 @@ async function answer(question, o){
         const d = /days?\s+(?:from|between)\s+(.+?)\s+(?:to|and|until|till)\s+(.+?)\s*\??$/i.exec(e) || (()=>{ const m = /^(.+?)\s+[-−–]\s+(.+)$/.exec(e); return m && dateOf(m[1]) && dateOf(m[2]) ? [null, m[2], m[1]] : null; })();
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step});
+      const ur = userRules();
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step,
+        review: Web.review, remember: Web.remember, rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
   }
@@ -199,6 +204,20 @@ async function status(){
   console.log(bold('AI: ') + (st.length ? st.map(x=>x.name + (x.resting ? yellow(' (resting)') : '')).join(' → ') : yellow('none — run  ai setup')) + '\n');
 }
 
+async function rules(){
+  const cfg = config(), {Web} = engine(cfg);
+  if(!fs.existsSync(RULES_FILE)) { fs.mkdirSync(HOME, {recursive: true, mode: 0o700}); fs.writeFileSync(RULES_FILE, '# Your rules for Money AI\n# One rule per line starting with "- ". Every answer is told to follow them.\n# For example:\n#   - Give amounts in rupees with Indian commas (1,00,000)\n#   - For cricket, say the match format (Test, ODI, T20)\n', {mode: 0o600}); }
+  console.log(bold('\nEvery answer is checked against:'));
+  Object.entries(Web.RULES).forEach(([k, v])=>console.log('  ' + dim(k) + ' ' + v));
+  const ur = userRules();
+  console.log(bold('\nYour rules') + dim(' (' + RULES_FILE + ')') + ':' + (ur.length ? '' : dim(' none yet — add lines starting with "- "')));
+  ur.forEach(r=>console.log('  - ' + r));
+  const ms = global.MoneyBrain.lessons({app: 'ai', topic: 'mistake'}).filter(L=>!L.off).sort((a, b)=>b.n - a.n);
+  console.log(bold('\nMistakes it was caught making') + dim(' (it is reminded of these before every answer)') + ':' + (ms.length ? '' : dim(' none yet')));
+  ms.forEach(L=>console.log('  ' + yellow(L.n + '×') + ' ' + (Web.RULES[L.key] || L.key)));
+  console.log('');
+}
+
 /* ---------------------------------------------------------------- the command */
 async function main(){
   const args = process.argv.slice(2);
@@ -212,11 +231,12 @@ async function main(){
     else if(a === '--no-ai') o.noAi = true;
     else if(a === '--deep') o.deep = true;
     else if(a === '--classic') o.classic = true;
-    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 13).join('\n').replace(/^\s*/gm, '')); return; }
+    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 14).join('\n').replace(/^\s*/gm, '')); return; }
     else rest.push(a);
   }
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
+  if(rest[0] === 'rules' && rest.length === 1) return rules();
   if(rest[0] === 'serve'){ (await import('./serve.mjs')).serve(); return; }      // the local helper for the website (normally started at login)
   if(rest.length){
     try{ show(await answer(rest.join(' '), o), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }

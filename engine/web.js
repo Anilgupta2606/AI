@@ -357,7 +357,8 @@ Reply with JSON only, one of:
 {"answer": "a clear, complete answer in plain sentences, each fact marked with its source like [2]; say what is uncertain or where sources disagree"}
 {"search": "a better web search query"}   (only if the sources do not contain the answer)
 {"open": "one URL from the links listed"}  (only if one of them clearly holds the answer)
-Use only the sources. Copy numbers exactly as the sources give them. Never invent a source number.`;
+Use only the sources. Copy numbers exactly as the sources give them. Never invent a source number.
+Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made before — avoid them: ' + m.join('; ') + '.' : '')(pastMistakes())}`;
   async function deep(question, o){
     o = o || {};
     const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
@@ -419,18 +420,114 @@ Use only the sources. Copy numbers exactly as the sources give them. Never inven
       try{ j = JSON.parse(String(r.text).slice(String(r.text).indexOf('{'), String(r.text).lastIndexOf('}') + 1)); }catch(e){ j = {answer: String(r.text || '').trim()}; }
       if(j.search && round < 2){ step('Searching again: ' + j.search); try{ const more = await o.search(j.search, 6); await readSome(more.results || [], 3); }catch(e){} continue; }
       if(j.open && round < 2 && /^https?:/.test(j.open)){ step('Opening a linked page…'); await readSome([{url: j.open, title: j.open}], 1); continue; }
-      const text = String(j.answer || '').trim();
+      let text = String(j.answer || '').trim();
       if(!text) break;
-      // every figure in the answer must be in what was read
-      const nums = t => (t.match(/\d[\d,.]*\d|\d/g) || []).map(x=>x.replace(/,/g, '').replace(/\.$/, '')).filter(x=>x.length >= 3);
-      const have = new Set(nums(ps.map(p=>p.passage + ' ' + p.title).join(' ')));
-      const foreign = nums(text.replace(/\[\d+\]/g, '')).filter(n=>!have.has(n) && !/^20\d\d$/.test(n));
+      // held to the rules: what breaks them goes back to the AI once to fix, and is remembered so later answers avoid it
       const used = ps.map((p, i)=>({title: p.title, url: p.url, i: i + 1}));
-      if(foreign.length) return {kind: 'web', text: text + '\n\n⚠ Not found in the sources: ' + foreign.slice(0, 4).join(', ') + ' — check before relying on ' + (foreign.length === 1 ? 'it' : 'them') + '.', sources: used, provider, by: r.provider + ' · ' + r.model + ' · read ' + ps.length + ' pages via ' + provider};
-      return {kind: 'web', text, sources: used, provider, by: r.provider + ' · ' + r.model + ' · read ' + ps.length + ' pages via ' + provider};
+      const ctx = {question, sources: ps.map((p, i)=>({n: i + 1, title: p.title, text: p.passage})), searched: true, timely};
+      let issues = review(text, ctx).filter(i=>i.rule !== 'R6'), fixed = 0;
+      if(issues.length){
+        remember(issues);
+        step('Checking the answer against the rules… fixing ' + issues.length + ' thing' + (issues.length === 1 ? '' : 's'));
+        try{
+          const r2 = await o.chat(DEEP_SYSTEM(today), [{role: 'user', content: prompt}, {role: 'assistant', content: JSON.stringify({answer: text})},
+            {role: 'user', content: 'Your answer breaks these rules:\n' + issues.map(i=>'- ' + RULES[i.rule] + ': ' + i.text).join('\n') + '\nRewrite the whole answer so it follows them, using only the sources. Reply as JSON {"answer": "..."}.'}], {maxTokens: 900});
+          let t2 = '';
+          try{ t2 = JSON.parse(String(r2.text).slice(String(r2.text).indexOf('{'), String(r2.text).lastIndexOf('}') + 1)).answer; }catch(e){ t2 = String(r2.text || ''); }
+          t2 = String(t2 || '').trim();
+          const left = t2 ? review(t2, ctx).filter(i=>i.rule !== 'R6') : issues;
+          if(t2 && left.length < issues.length){ fixed = issues.length - left.length; text = t2; issues = left; }
+        }catch(e){}
+      }
+      const warn = issues.filter(i=>/R4|R5|R7|R8/.test(i.rule)).map(i=>'⚠ ' + i.text).join('\n');
+      return {kind: 'web', text: text + (warn ? '\n\n' + warn : ''), sources: used, provider, issues,
+        by: r.provider + ' · ' + r.model + ' · read ' + ps.length + ' pages via ' + provider + (fixed ? ' · fixed ' + fixed + ' rule break' + (fixed === 1 ? '' : 's') : '')};
     }
     const ps = passagesOf();
     return {kind: 'web', text: 'The AI could not settle on an answer. The most relevant passages: ' + bestSentences(question, ps.map((p, i)=>({title: p.title, url: p.url, text: p.passage, rank: i})), 3).map(b=>b.s).join(' '), sources: ps.map(p=>({title: p.title, url: p.url})), provider};
+  }
+
+  /* ================================================================ REVIEW: rules every answer is held to
+     review(answer, {question, sources:[{n, title, text}], extra (calculator results, files), searched, timely})
+       -> [{rule, text}] — what breaks the rules. Used after every draft: the model gets these back and must fix them
+       (search, open, calculate again), and each mistake is remembered so later answers start by avoiding it. */
+  const RULES = {
+    R1: 'A question about now must be searched',
+    R2: 'Every fact with a number, name or date cites a source',
+    R3: 'A cited source must be one that was read',
+    R4: 'Every number comes from a source or the calculator',
+    R5: 'Sums written in the answer must be right',
+    R6: 'Day counts come from the calculator',
+    R7: 'A forecast is reported as a forecast, not as a decision',
+    R8: 'Names in the answer appear in the sources',
+    R9: 'Answer once: no "Final answer" section, no repeating',
+  };
+  const COMMON = new Set(('The This That These Those There Here It Its In On At For From With By And Or But If As To Of A An According However Also Additionally ' +
+    'Today Yesterday Tomorrow Note Sources Source Yes No January February March April May June July August September October November December ' +
+    'Monday Tuesday Wednesday Thursday Friday Saturday Sunday I We You They He She Final Answer Thus Therefore So Overall Currently Latest').split(' '));
+  const sentencesOf = t => String(t).match(/(?:[^.!?\n]|\.(?=\d))+[.!?]?/g) || [];
+  function review(answer, c){
+    c = c || {};
+    const out = [], text = String(answer || ''), bare = text.replace(/\[\d+\]/g, '');
+    const src = (c.sources || []).map(s=>String(s.title || '') + ' ' + String(s.text || '')).join(' ') + ' ' + String(c.extra || '');
+    const srcL = src.toLowerCase();
+    const nums = t => (String(t).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x=>x.replace(/,/g, '').replace(/\.$/, ''));
+    const have = new Set(nums(src));
+    if(c.timely && !c.searched) out.push({rule: 'R1', text: 'This is about now, but nothing was searched.'});
+    // R3: citations to nothing
+    const valid = new Set((c.sources || []).map(s=>+s.n));
+    const bad = Array.from(new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)).filter(n=>!valid.has(n))));
+    if(bad.length && valid.size) out.push({rule: 'R3', text: 'Sources ' + bad.map(n=>'[' + n + ']').join(' ') + ' were never read.'});
+    // R5: sums written out are worked again
+    const val = x => parseFloat(String(x).replace(/[₹,\s]/g, ''));
+    for(const m of text.matchAll(/(₹?\s?[\d,]+(?:\.\d+)?)\s*([×x*\/+−-])\s*(₹?\s?[\d,]+(?:\.\d+)?)\s*=\s*(₹?\s?[\d,]+(?:\.\d+)?)/g)){
+      const a = val(m[1]), b = val(m[3]), r = val(m[4]);
+      const want = m[2] === '/' ? a / b : m[2] === '+' ? a + b : /[−-]/.test(m[2]) ? a - b : a * b;
+      if(Math.abs(want - r) <= Math.max(0.011, Math.abs(want) * 0.0005)) nums(m[4]).forEach(n=>have.add(n));
+      else out.push({rule: 'R5', text: m[0].trim() + ' is wrong; it is ' + (Math.round(want * 100) / 100).toLocaleString('en-IN') + '. Use calculate.'});
+    }
+    // R6: day counts only from the calculator
+    for(const m of bare.matchAll(/\b(\d+)\s+(days?|weeks?)\b/gi)) if(!new RegExp('\\b' + m[1] + '\\s+(days?|weeks?)', 'i').test(String(c.extra || ''))) { out.push({rule: 'R6', text: '"' + m[0] + '" was not worked out with calculate.'}); break; }
+    // R4: numbers not in what was read (a year, a list number and small counts are fine)
+    if(c.sources && c.sources.length){
+      const foreign = Array.from(new Set(nums(bare.replace(/(^|\n)\s*\d+[.)]\s/g, ' ')).filter(n=>!have.has(n) && !/^(19|20)\d\d$/.test(n) && (n.length >= 3 || /\./.test(n)))));
+      if(foreign.length) out.push({rule: 'R4', text: 'These numbers are not in what was read: ' + foreign.slice(0, 5).join(', ') + '.'});
+    }
+    // R2: sentences with figures and no source mark
+    if(valid.size){
+      const uncited = sentencesOf(text).filter(x=>/\d[\d,]*\.\d|\d{3,}|₹|%/.test(x.replace(/\b(19|20)\d\d\b/g, '')) && !/\[\d+\]/.test(x) && x.trim().length > 20);
+      if(uncited.length) out.push({rule: 'R2', text: 'Mark the source for: "' + uncited[0].trim().slice(0, 90) + '"'});
+    }
+    // R7: a figure stated as decided where every source sentence with it is a forecast
+    const FORE = /\b(expect|expected|expects|may|might|likely|could|poll|forecast|predict|predicted|projected|see|sees|economists|analysts|estimate)\b/i;
+    const DONE = /\b(raised|hiked|cut|reduced|increased|decreased|kept|held|left|unchanged|decided|announced|set|approved|won|launched)\b/i;
+    for(const s of sentencesOf(bare)){
+      if(!DONE.test(s) || FORE.test(s)) continue;
+      for(const n of nums(s).filter(x=>x.length >= 3 || /\./.test(x))){
+        const around = sentencesOf(src).filter(x=>x.replace(/,/g, '').includes(n));
+        if(around.length && around.every(x=>FORE.test(x) && !DONE.test(x))){ out.push({rule: 'R7', text: n + ' appears in the sources only as an expectation, but the answer states it as decided.'}); break; }
+      }
+    }
+    // R8: names the sources never mention
+    if(c.sources && c.sources.length){
+      const q = String(c.question || '').toLowerCase();
+      const names = Array.from(new Set((bare.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g) || []).filter(w=>!COMMON.has(w.split(' ')[0]) && !q.includes(w.toLowerCase()))));
+      const missing = names.filter(w=>!srcL.includes(w.toLowerCase()) && !w.split(' ').every(x=>srcL.includes(x.toLowerCase())));
+      if(missing.length) out.push({rule: 'R8', text: 'Not in any source read: ' + missing.slice(0, 4).join(', ') + '.'});
+    }
+    // R9: answer once
+    const sents = sentencesOf(bare).map(x=>x.trim().toLowerCase()).filter(x=>x.length >= 25);
+    if(/\bfinal answer\b/i.test(text) || sents.length !== new Set(sents).size) out.push({rule: 'R9', text: 'Say it once — remove the "Final answer" part and repeated sentences.'});
+    return out;
+  }
+  /* Mistakes it made before, from its memory (Money Brain): the most frequent first -> lines for the instructions */
+  function pastMistakes(){
+    if(typeof MoneyBrain === 'undefined') return [];
+    return MoneyBrain.lessons({app: 'ai', topic: 'mistake'}).filter(L=>!L.off).sort((a, b)=>b.n - a.n).slice(0, 5).map(L=>RULES[L.key] ? RULES[L.key] + ' (missed ' + L.n + ' time' + (L.n === 1 ? '' : 's') + ')' : '').filter(Boolean);
+  }
+  function remember(issues){
+    if(typeof MoneyBrain === 'undefined') return;
+    Array.from(new Set(issues.map(i=>i.rule))).forEach(r=>MoneyBrain.learn('ai', 'mistake', r, 'yes', {label: 'Answers: ' + RULES[r], why: 'Caught by the reviewer and corrected'}));
   }
 
   /* Web search for the apps, in the browser: this Mac's helper first (your SearXNG, pages read on the Mac, no keys),
@@ -467,7 +564,7 @@ Use only the sources. Copy numbers exactly as the sources give them. Never inven
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;
