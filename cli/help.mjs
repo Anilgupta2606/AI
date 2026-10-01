@@ -45,6 +45,7 @@ export const SECTIONS = [
   ]},
   {title: 'Settings (one command each)', rows: [
     ['ai status', 'What is running: your search engine, the model on this Mac, cloud AIs, backups.'],
+    ['ai model [name|auto]', 'Which model answers (auto: the best general one, the coding model for code). ai --model <name> "…" for one question.'],
     ['ai cloud on | off', 'Cloud AI for hard questions, always or never. ai cloud shows which cloud keys it has.'],
     ['ai off <tool> · ai on <tool>', 'Switch a tool off or on for the terminal: web, read, calc, market, code, connectors.'],
     ['ai connectors', 'List the data connectors (manage them on the page: Connectors).'],

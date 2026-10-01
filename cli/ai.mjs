@@ -143,8 +143,11 @@ async function answer(question, o){
     // a programming question goes to the coding model when it is on this Mac (better code for its size)
     const coder = models.find(m=>/coder/i.test(m));
     const codeQ = /\b(write|build|create|make|implement|fix|debug|refactor)\b[\s\S]{0,40}\b(code|program|script|function|class|app|algorithm|query)\b|\b(python|javascript|java|c\+\+|sql|typescript|bash)\b[\s\S]{0,30}\b(program|code|script|function|query)\b|```/i.test(question);
-    const useModel = codeQ && coder ? coder : model;
-    if(model){
+    // a model you chose (ai model <name>, --model, MONEY_AI_MODEL) answers everything, code too
+    const chosen = o.model || process.env.MONEY_AI_MODEL || cfg.ai.model;
+    if(chosen && !models.includes(chosen)) throw new Error('The model ' + chosen + ' is not on this Mac (ollama pull ' + chosen + ', or ai model auto)');
+    const useModel = chosen || (codeQ && coder ? coder : model);
+    if(model || o.model || cfg.ai.model){
       // your search engine not answering: restart it (a few seconds) before any backup is used
       let localUp = await Local.searxngUp();
       if(!localUp && !o.noWeb && process.platform === 'darwin'){
@@ -209,7 +212,7 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see, signal: o.signal, format: formatAsk(question),
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: (o.attachments || []).concat(fileSources.map(f=>({name: path.basename(f.url.replace(/^file:\/\//, '')), text: f.content}))), see, signal: o.signal, format: formatAsk(question),
         trustOf: Web.trustOf, trustRank: u => Web.TRUST_RANK[Web.trustOf(u)] || 0, searchChats: (q, n) => searchSessions(q, n),
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
         cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}, o.signal) : null,
@@ -677,6 +680,7 @@ async function main(){
     else if(a === '--classic') o.classic = true;
     else if(a === '--cloud') o.cloud = true;
     else if(a === '--fresh') o.fresh = true;
+    else if(a === '--model') o.model = args[++i];
     else if(a === '--resume' || a === '-r'){ o.resume = true; if(args[i + 1] && !/^-/.test(args[i + 1]) && (/^\d{1,3}$/.test(args[i + 1]) || okId(args[i + 1]) && /^\d{14}-/.test(args[i + 1]))) o.resumeArg = args[++i]; }
     else if(a === '-h' || a === '--help'){ await showHelp(o); return; }
     else rest.push(a);
@@ -684,6 +688,14 @@ async function main(){
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
   if(rest[0] === 'rules' && rest.length === 1) return rules();
+  if(rest[0] === 'model' && rest.length <= 2){
+    const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
+    if(rest[1]){ if(rest[1] === 'auto') delete c.ai.model; else c.ai.model = rest[1]; writeJson(CONFIG, c); }
+    let ms = []; try{ ms = ((await (await _fetch(String(c.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name + dim(' ' + (m.size / 1e9).toFixed(1) + ' GB')); }catch(e){}
+    console.log(bold('Model: ') + (c.ai.model ? green(c.ai.model) + dim('  (ai model auto: let it choose)') : 'auto' + dim(' — the best general model here, the coding model for code')));
+    console.log(dim('On this Mac: ') + ms.join(dim(' · ')));
+    return;
+  }
   if(rest[0] === 'cloud' && rest[1] === 'test'){
     // one short question to each cloud AI with a key: which answer, which do not (and why)
     const cfg = config(), {AI} = engine(cfg);
