@@ -213,6 +213,10 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .box:focus-within{background-image:linear-gradient(var(--card), var(--card)), var(--orb)}
 .box textarea{flex:1; border:0; outline:0; background:none; resize:none; max-height:180px; padding:8px 0; line-height:1.5}
 .send{width:42px; height:42px; border-radius:50%; border:0; background:var(--ink); color:var(--page); display:grid; place-items:center; cursor:pointer; flex:none; transition:transform .15s ease}
+.send.stop{background:var(--check)}
+.mic.on{color:var(--check); background:var(--check-bg); animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 6px color-mix(in srgb, var(--check) 18%, transparent)}}
+.stopped{color:var(--mut); font-size:13.5px; margin:8px 0 0}
 .send:hover{transform:scale(1.06)} .send:disabled{opacity:.4; cursor:default; transform:none}
 .btn{background:var(--ink); color:var(--page); border:0; border-radius:12px; padding:9px 16px; font-weight:600; cursor:pointer}
 .clip{width:38px; height:38px; border:0; background:none; color:var(--mut); border-radius:12px; cursor:pointer; display:grid; place-items:center; flex:none; align-self:flex-end}
@@ -321,6 +325,7 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 <header class="topbar">
   <button class="iconbtn menuBtn" id="sbOpen" type="button" aria-label="Open chats"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
   <div class="ctitle" id="chatTitle">New chat</div>
+  <button class="iconbtn" id="exportChat" type="button" title="Export this chat (Markdown)" aria-label="Export this chat" hidden><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg></button>
   <div class="where"><span class="pill" id="stWhere"><i></i>Starting</span><span class="pill" id="stSearch" hidden></span><span class="pill model" id="stModel" hidden></span></div>
 </header>
 <section class="login" id="login" hidden>
@@ -370,9 +375,10 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
       <button type="button" data-in="cameraIn" role="menuitem" class="phoneOnly"><i>📷</i><span><b>Take a photo</b><small>With the camera</small></span></button>
     </div>
     <textarea id="q" rows="1" placeholder="Ask anything…  ( / for commands)" aria-label="Your question"></textarea>
+    <button class="clip mic" type="button" id="mic" aria-label="Speak your question" title="Speak (🎤)" hidden><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0M12 18v3"/></svg></button>
     <button class="send" id="ask" aria-label="Ask"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
   </form>
-  <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><button class="link" id="clear" type="button">New chat</button></div>
+  <div class="hint"><span>Enter to ask · Shift+Enter new line · ⌘K new chat · 🎤 speak</span><button class="link" id="clear" type="button">New chat</button></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -513,8 +519,10 @@ function finish(el, q, out, steps, traces){
   el.querySelector('.work').outerHTML = n ? `<details class="how"><summary><span class="dots">${dots.join('')}</span>How it got here · ${n} step${n === 1 ? '' : 's'}${out.secs ? ' · ' + out.secs + ' s' : ''}</summary>${traces.length ? timeline(traces) : `<div class="steps">${steps.map(s=>stepHtml(s)).join('')}</div>`}</details>` : '';
   const model = out.model || (/no AI/.test(out.by || '') ? 'Worked out exactly (no AI)' : '');
   el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">✦ ${esc(model)}</span>` : ''}${render(out)}
-    <div class="foot"><span class="by">${esc(out.by || '')}</span>${out.saved ? '<button class="ghost fresh" type="button">Ask fresh</button>' : ''}<button class="ghost up" type="button" title="Good answer — keep it">👍</button><button class="ghost down" type="button" title="Wrong — tell it what is right">👎</button></div></div>`;
+    <div class="foot"><span class="by">${esc(out.by || '')}</span>${out.saved ? '<button class="ghost fresh" type="button">Ask fresh</button>' : ''}<button class="ghost cp" type="button" title="Copy the answer">Copy</button><button class="ghost rt" type="button" title="Ask again from scratch">Retry</button><button class="ghost up" type="button" title="Good answer — keep it">👍</button><button class="ghost down" type="button" title="Wrong — tell it what is right">👎</button></div></div>`;
   el.querySelector('.foot .down').onclick = () => teachBox(el, q);
+  el.querySelector('.foot .cp').onclick = e => { const b = e.currentTarget; (navigator.clipboard ? navigator.clipboard.writeText(out.text || '') : Promise.reject()).then(()=>{ b.textContent = 'Copied'; setTimeout(()=>{ b.textContent = 'Copy'; }, 1500); }).catch(()=>toast('Select the text to copy it')); };
+  el.querySelector('.foot .rt').onclick = () => ask(q, {fresh: true});
   el.querySelector('.foot .up').onclick = async e => {
     const b = e.currentTarget; b.disabled = true;
     const r = await api.feedback({question: q, good: true, answer: {text: out.text, sources: out.sources, model: out.model}}).catch(()=>({}));
@@ -546,7 +554,7 @@ async function ask(q, opt){
   if(!q || busy) return;
   const files = attachments.filter(a=>!a.busy && (a.text || a.image)).map(a=>a.image ? {name: a.name, image: a.image, thumb: a.thumb} : {name: a.name, text: a.text});
   attachments = []; showFiles();
-  busy = true; $('#ask').disabled = true; $('#q').value = ''; grow(); $('#orb').classList.add('busy');
+  busy = true; ctl = new AbortController(); sendState(true); $('#q').value = ''; grow(); $('#orb').classList.add('busy');
   const el = turnEl(q, files), box = el.querySelector('.steps'), live = el.querySelector('.live'), steps = [], traces = [];
   const addTrace = t => { traces.push(t); const open = Array.from(live.querySelectorAll('details')).map(d=>d.open); live.innerHTML = timeline(traces, true); live.querySelectorAll('details').forEach((d, i)=>{ if(open[i]) d.open = true; }); };
   el.scrollIntoView({behavior: 'smooth', block: 'start'});
@@ -576,7 +584,7 @@ async function ask(q, opt){
       out.secs = Math.round((Date.now() - t0) / 1000);
       done(out);
     } else {
-      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns, cloud: cloudKeys(), fresh: !!opt.fresh, attachments: files.map(f=>f.image ? {name: f.name, image: f.image} : f), goal, disabled})});
+      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, signal: ctl.signal, body: JSON.stringify({question: q, history: turns, cloud: cloudKeys(), fresh: !!opt.fresh, attachments: files.map(f=>f.image ? {name: f.name, image: f.image} : f), goal, disabled})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'It answered ' + r.status);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '', out = null;
@@ -601,9 +609,16 @@ async function ask(q, opt){
     }
   }catch(e){
     const w = el.querySelector('.work .orb'); if(w) w.classList.remove('busy');
+    if(ctl && ctl.signal.aborted){
+      // stopped: what was written so far stays, marked as stopped
+      const d = el.querySelector('.draft'), part = d && !d.hidden ? d.innerHTML.replace('<div class="dlabel">Writing…</div>', '') : '';
+      el.querySelector('.slot').innerHTML = `<div class="a">${part}<p class="stopped">■ Stopped.</p></div>`;
+      if(d) d.hidden = true;
+      busy = false; sendState(false); $('#orb').classList.remove('busy'); $('#q').focus(); return;
+    }
     el.querySelector('.slot').innerHTML = `<div class="a"><p class="err">${esc(e.message)}</p>${mode === 'mac' ? '<p class="sub">Is the helper running? In Terminal: <code>launchctl kickstart -k gui/$(id -u)/com.moneyai.local</code></p>' : ''}</div>`;
   }
-  busy = false; $('#ask').disabled = false; $('#orb').classList.remove('busy'); $('#q').focus();
+  busy = false; sendState(false); $('#orb').classList.remove('busy'); $('#q').focus();
 }
 
 /* what it has learned */
@@ -655,7 +670,7 @@ async function browserAnswer(q, turns, step){
   const g = !opt_fresh && !opt_files.length && MoneyWeb.findGood(q);
   if(g) return {text: g.text, sources: g.sources || [], saved: true, model: 'Your saved answer', by: 'Your saved answer from ' + g.at + ' (you marked it 👍)'};
   const relayCfg = (MoneyAI.aiLocal() || {}).relay, hasAi = MoneyAI.aiAvailable();
-  const chat = hasAi ? (sys, t, o) => MoneyAI.chat(sys, t, o) : null;
+  const chat = hasAi ? (sys, t, o) => MoneyAI.chat(sys, t, o, ctl && ctl.signal) : null;
   let quick = null;
   try{ quick = await MoneyWeb.answer(q, {factsOnly: !!(relayCfg && relayCfg.url)}); }catch(e){}
   if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick);
@@ -838,6 +853,40 @@ $('#fileIn').onchange = async () => {
   $('#fileIn').value = '';
 };
 
+/* ---------------------------------------------------------------- stop, export, voice, shortcuts */
+let ctl = null;
+const SEND = $('#ask').innerHTML, STOP = '<svg width="14" height="14" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor"/></svg>';
+function sendState(on){ const b = $('#ask'); b.classList.toggle('stop', on); b.innerHTML = on ? STOP : SEND; b.setAttribute('aria-label', on ? 'Stop' : 'Ask'); b.title = on ? 'Stop' : ''; }
+$('#ask').addEventListener('click', e=>{ if(busy){ e.preventDefault(); e.stopImmediatePropagation(); if(ctl) ctl.abort(); } }, true);
+// this chat as a Markdown file
+$('#exportChat').onclick = () => {
+  if(!history.length) return;
+  const md = '# ' + history[0].q + '\n\n' + history.map(h=>'**You:** ' + h.q + '\n\n**AI** (' + ((h.answer || {}).model || 'AI') + '):\n\n' + ((h.answer || {}).text || '') +
+    (((h.answer || {}).sources || []).length ? '\n\nSources:\n' + h.answer.sources.map((x, i)=>'- [' + (x.i || i + 1) + '] ' + (x.title || '') + (x.url ? ' — ' + x.url : '')).join('\n') : '')).join('\n\n---\n\n') + '\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([md], {type: 'text/markdown'}));
+  a.download = (String(history[0].q).replace(/[^\w\s-]/g, '').trim().slice(0, 40).replace(/\s+/g, '-') || 'chat') + '.md';
+  document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+};
+// speak your question (Chrome, Edge, Safari): the words appear in the box; press Enter when it is right
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+if(SR){
+  const mic = $('#mic'); mic.hidden = false; let rec = null;
+  mic.onclick = () => {
+    if(rec){ rec.stop(); return; }
+    rec = new SR(); rec.lang = navigator.language && /^en|^hi/.test(navigator.language) ? navigator.language : 'en-IN'; rec.interimResults = true; rec.continuous = false;
+    const before = $('#q').value;
+    rec.onresult = e => { $('#q').value = (before ? before + ' ' : '') + Array.from(e.results).map(r=>r[0].transcript).join(''); grow(); };
+    rec.onend = () => { rec = null; mic.classList.remove('on'); $('#q').focus(); };
+    rec.onerror = e => { if(e.error === 'not-allowed') toast('Allow the microphone for this page to speak'); else if(e.error !== 'no-speech' && e.error !== 'aborted') toast('Voice: ' + e.error); };
+    mic.classList.add('on'); rec.start();
+  };
+}
+// ⌘K / Ctrl+K: a new chat · /: jump to the box
+document.addEventListener('keydown', e=>{
+  if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k'){ e.preventDefault(); newChat(); }
+  else if(e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement.tagName) && $('#login').hidden){ e.preventDefault(); $('#q').focus(); }
+});
+
 /* ---------------------------------------------------------------- / commands */
 const COMMANDS = [
   {c: '/goal', a: 'what you are working towards', d: 'Keep a goal for this conversation — every answer works toward it'},
@@ -969,7 +1018,7 @@ function newChat(quiet){
   drawChats(); $('#q').focus();
   if(!quiet) toast('New chat — the last one is in the list');
 }
-const setTitle = () => { $('#chatTitle').textContent = history.length ? history[0].q : 'New chat'; document.title = history.length ? String(history[0].q).slice(0, 50) + ' — AI' : 'AI'; };
+const setTitle = () => { $('#exportChat').hidden = !history.length; $('#chatTitle').textContent = history.length ? history[0].q : 'New chat'; document.title = history.length ? String(history[0].q).slice(0, 50) + ' — AI' : 'AI'; };
 // on a phone the sidebar slides in; on a wide screen it is always there
 const openChats = on => { document.body.classList.toggle('sbOpen', !!on && innerWidth <= 900); $('#scrim').classList.toggle('open', !!on && innerWidth <= 900); if(on) loadChats(); };
 $('#sbOpen').onclick = () => openChats(true);

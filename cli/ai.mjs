@@ -143,7 +143,8 @@ async function answer(question, o){
       const read = async (url, links) => { try{ return await Local.read(url, links); }catch(e){ if(cfg.search.jina) return S.read(url, links); throw e; } };
       // streamed, so the answer can be shown as it is written; kept loaded for 30 minutes (no reload between questions)
       const chat = async (messages, tools, opts) => {
-        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model: useModel, messages, tools, stream: true, think: false, keep_alive: '30m', options: {temperature: 0.2, num_ctx: 12288}})});
+        if(o.signal && o.signal.aborted) throw new Error('Stopped');
+        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', signal: o.signal, body: JSON.stringify({model: useModel, messages, tools, stream: true, think: false, keep_alive: '30m', options: {temperature: 0.2, num_ctx: 12288}})});
         if(!r.ok) throw new Error('The model answered ' + r.status + ': ' + (await r.text()).slice(0, 200));
         let content = '', calls = [], buf = '', last = 0;
         const dec = new TextDecoder();
@@ -190,9 +191,9 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see,
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see, signal: o.signal,
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
-        cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}) : null,
+        cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}, o.signal) : null,
         market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }

@@ -37,6 +37,17 @@ Everything the AI can do and every setting. In the terminal: `ai help`, or `/hel
 | `/new` | Start a new chat (this one stays: ai --resume). |
 | `/help · /exit` | This help · leave. |
 
+## On the page (ai ui, or anilgupta2606.github.io/ai/chat/)
+
+| | |
+|---|---|
+| `Sidebar` | New chat, search, your chats by day (the terminal's too), Connectors, What it learned, your account (theme, cloud, keys, sign out). |
+| `While it works` | Every step live (open any to see what it found); the answer appears as it is written; ■ stops it. |
+| `On an answer` | Copy · Retry · 👍 keep · 👎 correct; sources as cards; charts for markets; code with Copy. |
+| `📎 · 🎤` | Attach files, a folder, images or a photo · speak your question. |
+| `Keys` | Enter ask · Shift+Enter new line · ⌘K new chat · / jump to the box · / in the box: commands. |
+| `⤓ (top right)` | Export the chat as a Markdown file. |
+
 ## Settings (one command each)
 
 | | |

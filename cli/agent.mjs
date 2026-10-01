@@ -139,6 +139,7 @@ export async function runAgent(question, o){
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
   const run = async (name, args) => {
+    if(o.signal && o.signal.aborted) throw new Error('Stopped');
     if(name === 'web_search'){
       const q = String(args.query || question).slice(0, 300);
       step('🔎 Searching: ' + q);
@@ -245,6 +246,7 @@ export async function runAgent(question, o){
     }
   }
   for(let turn = 0; turn < 10; turn++){
+    if(o.signal && o.signal.aborted) throw new Error('Stopped');
     step(turn ? 'Thinking about what it found…' : 'Thinking…');
     // the answer as it is written (a turn that ends in a tool call is not the answer: the page drops it)
     if(forceCloud) step('Handing it to the bigger model');

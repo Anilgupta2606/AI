@@ -71,11 +71,14 @@ export function serve(port){
         const line = x => { try{ res.write(JSON.stringify(x) + '\n'); }catch(e){} };
         const history = (Array.isArray(d.history) ? d.history : []).slice(-6).map(h=>({role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, 1500)}));
         const t = Date.now();
-        try{ const out = await B.answer(q, {history, files: [], fresh: !!d.fresh, goal: String(d.goal || '').slice(0, 400),
+        // Stop on the page closes this request: the work stops too (the model, the searches)
+        const stop = new AbortController();
+        res.on('close', ()=>{ if(!res.writableEnded) stop.abort(); });
+        try{ const out = await B.answer(q, {signal: stop.signal, history, files: [], fresh: !!d.fresh, goal: String(d.goal || '').slice(0, 400),
           disabled: (Array.isArray(d.disabled) ? d.disabled : []).filter(x=>/^(web|read|calc|market|code|connectors)$/.test(x)),
           attachments: (Array.isArray(d.attachments) ? d.attachments : []).slice(0, 40).map(a=>({name: String(a && a.name || 'file').slice(0, 160), text: String(a && a.text || '').slice(0, 300000),
             image: a && typeof a.image === 'string' && /^[A-Za-z0-9+/=]+$/.test(a.image.slice(0, 200)) ? a.image.slice(0, 12e6) : undefined})).filter(a=>a.text.trim() || a.image), cloudKeys: d.cloud && d.cloud.keys && typeof d.cloud.keys === 'object' && Object.keys(d.cloud.keys).length ? d.cloud.keys : null, cloud: !!d.cloud, onStep: s=>line({step: s}), onTrace: t=>line({trace: t}), onDraft: (()=>{ let at = 0; return t=>{ if(Date.now() - at > 150){ at = Date.now(); line({draft: String(t).slice(-6000)}); } }; })()}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
-        catch(e){ line({error: String(e.message || e)}); }
+        catch(e){ if(!stop.signal.aborted) line({error: String(e.message || e)}); }
         return res.end();
       }catch(e){ return send(500, {error: String(e.message || e)}); }
     }
