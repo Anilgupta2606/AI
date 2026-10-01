@@ -19,6 +19,8 @@ import os from 'os';
 import path from 'path';
 import vm from 'vm';
 import readline from 'readline';
+import * as Local from './local.mjs';
+import {runAgent} from './agent.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -74,7 +76,7 @@ const FILE_TYPES = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|yaml|yml|ini|j
 async function answer(question, o){
   const cfg = config(), {AI, Web} = engine(cfg), S = await searcher(cfg);
   const hasAi = AI.aiAvailable() && !o.noAi;
-  const step = t => { if(!o.json && tty) process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
+  const step = t => { if(o.json || !tty) return; if(/^[🔎📄🧮📂]/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
   const done = () => { if(!o.json && tty) process.stderr.write('\r\x1b[K'); };
   const chat = hasAi ? (system, turns, opts) => AI.chat(system, (o.history || []).concat(turns), Object.assign({}, opts, {onProgress: t=>step(t)})) : null;
   // a file: its text is a source too
@@ -90,7 +92,46 @@ async function answer(question, o){
     const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
     if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Money Brain · ' + quick.kind + ' (no AI)'}, quick); }
   }
-  // 2. the web (and the files): search, read, think
+  // 2. the model on this Mac at the wheel: it searches (your SearXNG), reads pages (here), calculates and answers
+  const ollama = cfg.ai.keys.ollama;
+  if(ollama && !o.noAi && !o.classic){
+    let models = [];
+    try{ models = ((await (await fetch(ollama.replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); }catch(e){}
+    const model = models.length ? AI.rankModels('ollama', models, 'smart')[0] : null;
+    if(model){
+      const localUp = await Local.searxngUp();
+      const search = async (q, n) => {
+        if(o.noWeb) throw new Error('web search is off (--no-web)');
+        if(localUp){ try{ return await Local.search(q, n); }catch(e){ if(!S.any) throw e; } }
+        if(S.any) return S.search(q, n);                      // only if your own search engine is down
+        throw new Error('Your search engine (SearXNG) is not running — start it with:  launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng');
+      };
+      const read = async (url, links) => { try{ return await Local.read(url, links); }catch(e){ if(cfg.search.jina) return S.read(url, links); throw e; } };
+      const chat = async (messages, tools) => {
+        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model, messages, tools, stream: false, think: false, options: {temperature: 0.2, num_ctx: 12288}})});
+        if(!r.ok) throw new Error('The model answered ' + r.status + ': ' + (await r.text()).slice(0, 200));
+        return Object.assign(await r.json(), {model});
+      };
+      const pick = (q, text, n) => { const b = Web.bestSentences(q, [{title: '', url: '', text, rank: 0}], n); return b.length ? b.map(x=>x.s).join(' ') : String(text).slice(0, 2500); };
+      // dates too: "days from today to 8 November 2026", "days between 2026-10-01 and 2026-11-08"
+      const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+      const dateOf = t => { t = String(t).trim().toLowerCase().replace(/(\d)(st|nd|rd|th)\b/, '$1').replace(/,/g, '');
+        if(/^today$/.test(t)) return new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
+        let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(t); if(m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+        m = /^(\d{1,2})\s+([a-z]+)\s+(\d{4})$/.exec(t); if(m && MON.indexOf(m[2].slice(0, 3)) >= 0) return new Date(Date.UTC(+m[3], MON.indexOf(m[2].slice(0, 3)), +m[1]));
+        m = /^([a-z]+)\s+(\d{1,2})\s+(\d{4})$/.exec(t); if(m && MON.indexOf(m[1].slice(0, 3)) >= 0) return new Date(Date.UTC(+m[3], MON.indexOf(m[1].slice(0, 3)), +m[2]));
+        return null; };
+      const calc = expr => {
+        const e = String(expr).replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+        // "days from A to B", or "B - A" with two dates
+        const d = /days?\s+(?:from|between)\s+(.+?)\s+(?:to|and|until|till)\s+(.+?)\s*\??$/i.exec(e) || (()=>{ const m = /^(.+?)\s+[-−–]\s+(.+)$/.exec(e); return m && dateOf(m[1]) && dateOf(m[2]) ? [null, m[2], m[1]] : null; })();
+        if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
+        const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step});
+      done(); return out;
+    }
+  }
+  // 3. no model on this Mac: the classic way (search, read, then an online AI answers)
   if((S.any && !o.noWeb) || fileSources.length){
     const search = async (q, n) => {
       const web = S.any && !o.noWeb ? await S.search(q, n) : {provider: 'your files', results: []};
@@ -142,8 +183,12 @@ async function setup(){
 }
 async function status(){
   const cfg = config(), {AI} = engine(cfg), S = await searcher(cfg);
-  console.log(bold('\nWeb search: ') + ([cfg.search.tavily && cfg.search.tavily.length ? 'Tavily ×' + cfg.search.tavily.length : '', cfg.search.serpapi ? 'SerpApi' : '', cfg.search.googleKey && cfg.search.googleCx ? 'Google' : ''].filter(Boolean).join(', ') || yellow('none — run  ai setup')));
-  console.log(bold('Reading pages: ') + 'Jina Reader' + (cfg.search.jina ? ' (with key)' : ' (free)') + ', else directly');
+  const up = await Local.searxngUp();
+  let localModel = '';
+  try{ const ms = ((await (await fetch(String(cfg.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); localModel = ms.length ? AI.rankModels('ollama', ms, 'smart')[0] : ''; }catch(e){}
+  console.log(bold('\nWorks on its own: ') + (up && localModel ? green('yes') + ' — your search engine ' + green('(SearXNG, running)') + ', pages read on this Mac, model ' + green(localModel) + ' on this Mac'
+    : yellow((up ? '' : 'SearXNG is not running (launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng). ') + (localModel ? '' : 'No model on this Mac (ollama pull qwen3:4b-instruct).'))));
+  console.log(bold('Backups (used only if yours is down): ') + ([cfg.search.tavily && cfg.search.tavily.length ? 'Tavily ×' + cfg.search.tavily.length : '', cfg.search.serpapi ? 'SerpApi' : '', cfg.search.googleKey && cfg.search.googleCx ? 'Google' : ''].filter(Boolean).join(', ') || 'none') + (cfg.search.jina ? ', Jina Reader' : ''));
   const st = AI.aiStatus();
   console.log(bold('AI: ') + (st.length ? st.map(x=>x.name + (x.resting ? yellow(' (resting)') : '')).join(' → ') : yellow('none — run  ai setup')) + '\n');
 }
@@ -160,6 +205,7 @@ async function main(){
     else if(a === '--no-web') o.noWeb = true;
     else if(a === '--no-ai') o.noAi = true;
     else if(a === '--deep') o.deep = true;
+    else if(a === '--classic') o.classic = true;
     else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 13).join('\n').replace(/^\s*/gm, '')); return; }
     else rest.push(a);
   }

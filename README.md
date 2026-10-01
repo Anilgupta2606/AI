@@ -16,7 +16,19 @@ AI **reason over what it read** — always with its sources — and it **learns*
 
 The apps load the engine from `https://anilgupta2606.github.io/ai/`; `./deploy.sh` runs every test and publishes it there.
 
-## The command line
+## The command line — on its own, like Claude
+
+`ai` works with nothing but this Mac and an internet connection: the **model on this Mac** (Ollama, Qwen3 4B Instruct)
+is at the wheel and decides what to do — **search** (your own SearXNG on this Mac, no keys), **open pages** (read here with
+Mozilla's Readability), **calculate** (sums and day counts, exactly), **read a file** — as often as it needs, then answers
+with sources. The program holds it to good habits: a question about now must be searched; a page must be opened before
+answering from search snippets; sums and day counts come from the calculator; every figure is checked against what was read.
+Tavily and Jina (if set) are used only when your own search engine is down.
+
+One-time pieces on this Mac: Ollama with `qwen3:4b-instruct`; SearXNG in `~/.money-ai/searxng` (settings in
+`~/.money-ai/searxng-settings.yml`), started at login by `~/Library/LaunchAgents/com.moneyai.searxng.plist`.
+
+## The command line (all commands)
 
 ```sh
 cd ~/AI && npm link          # once: makes the `ai` command
