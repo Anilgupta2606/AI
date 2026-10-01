@@ -36,3 +36,23 @@ test('rules: what is dated after today has not happened yet', ()=>{
   assert.deepStrictEqual(W.review('The decision was made at the meeting held from October 5 to 7, 2026 [2].', c).map(i=>i.rule), ['R10']);
   assert.deepStrictEqual(W.review('The next meeting will be held from October 5 to 7, 2026 [2].', c), []);
 });
+test('cases: a lesson comes back for a question like it, not for others, and ends when the event comes', ()=>{
+  W.remember([{rule: 'R10', text: '2026-10-05 is after today (2026-10-01), so ...'}], 'Did the RBI cut the repo rate at its October 2026 meeting?');
+  assert.strictEqual(W.casesFor('Has the RBI cut the repo rate in its October 2026 policy meeting?', 3, {today: '2026-10-02'}).length, 1);
+  assert.strictEqual(W.casesFor('What is the RBI repo rate right now?', 3, {today: '2026-10-02'}).length, 0);
+  assert.strictEqual(W.casesFor('Did the RBI cut the repo rate at its October 2026 meeting?', 3, {today: '2026-10-08'}).length, 0);
+  assert.match(W.timingNote('Did the RBI cut the repo rate at its October 2026 meeting?', '2026-10-01'), /may not have happened yet/);
+  assert.strictEqual(W.timingNote('Did the RBI cut rates in August 2026?', '2026-10-01'), '');
+});
+test('rules: "scheduled for" does not hide a claim that it happened', ()=>{
+  const c = {sources: [{n: 7, title: 'x', text: 'MPC October 5 to 7, 2026'}], today: '2026-10-01'};
+  assert.deepStrictEqual(W.review('This decision was made during the MPC meeting scheduled from October 5 to 7, 2026 [7].', c).map(i=>i.rule), ['R10']);
+  assert.deepStrictEqual(W.review('The next meeting is scheduled for October 5 to 7, 2026 [7].', c), []);
+  assert.deepStrictEqual(W.review('It has not happened yet: the MPC meets from October 5 to 7, 2026 [7].', c), []);
+});
+test('cases: the same mistake again makes one lesson surer, not two lessons', ()=>{
+  const n = () => MoneyBrain.lessons({app: 'ai', topic: 'case'}).length;
+  const before = n();
+  W.remember([{rule: 'R10', text: '2026-10-05 is after today'}], 'Has the RBI cut the repo rate in its October 2026 policy meeting?');
+  assert.strictEqual(n(), before);
+});

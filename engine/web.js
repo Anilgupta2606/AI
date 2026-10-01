@@ -412,7 +412,8 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     for(let round = 0; round < 3; round++){
       const ps = passagesOf();
       const ls = relevantLinks();
-      const prompt = 'Question: ' + question + '\n\nSources:\n' + ps.map((p, i)=>`[${i + 1}] ${p.title} — ${p.url}\n${p.passage}`).join('\n\n') +
+      const before = casesFor(question).concat([timingNote(question, today)]).filter(Boolean);
+      const prompt = 'Question: ' + question + (before.length ? '\n\nBefore you answer:\n- ' + before.join('\n- ') : '') + '\n\nSources:\n' + ps.map((p, i)=>`[${i + 1}] ${p.title} — ${p.url}\n${p.passage}`).join('\n\n') +
         (ls.length && round < 2 ? '\n\nLinks found inside those pages:\n' + ls.map(l=>'- ' + l.text + ' — ' + l.url).join('\n') : '');
       step(round ? 'Thinking again with more to read…' : 'Thinking over ' + ps.length + ' sources…');
       const r = await o.chat(DEEP_SYSTEM(today), [{role: 'user', content: prompt}], {maxTokens: 900});
@@ -427,7 +428,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       const ctx = {question, sources: ps.map((p, i)=>({n: i + 1, title: p.title, text: p.passage})), searched: true, timely};
       let issues = review(text, ctx).filter(i=>i.rule !== 'R6'), fixed = 0;
       if(issues.length){
-        remember(issues);
+        remember(issues, question);
         step('Checking the answer against the rules… fixing ' + issues.length + ' thing' + (issues.length === 1 ? '' : 's'));
         try{
           const r2 = await o.chat(DEEP_SYSTEM(today), [{role: 'user', content: prompt}, {role: 'assistant', content: JSON.stringify({answer: text})},
@@ -501,7 +502,9 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     if(counts.length) out.push({rule: 'R6', text: Array.from(new Set(counts)).join(', ') + ' — not worked out with calculate; do not add days up yourself.'});
     // R10: told as done, but dated after today
     const today = new Date((c.today || new Date().toISOString().slice(0, 10)) + 'T00:00:00Z');
-    const PAST = /\b(was|were|did|has been|had|kept|held|made|decided|announced|cut|raised|left|voted|confirmed|happened|took place)\b/i, FUTURE = /\b(will|scheduled|upcoming|due|expected|is to|are to|yet to|not yet|has not|hasn't|plans?)\b/i;
+    // ("the meeting scheduled for 5 October" inside a sentence that says a decision was made is still a claim that it happened)
+    const PAST = /\b(was|were|did|didn't|has been|had|kept|held|made|decided|announced|cut|raised|left|voted|confirmed|happened|took place|remained|stayed)\b/i;
+    const FUTURE = /\b(will|upcoming|yet to|not yet|has not (yet )?(happened|taken place|been held|met)|hasn't|is (scheduled|due|set) to|are (scheduled|due|set) to|is scheduled for|are scheduled for|next (meeting|review|policy))\b/i;
     for(const x of sentencesOf(bare)){
       const after = datesIn(x).filter(d=>d > today);
       if(after.length && PAST.test(x) && !FUTURE.test(x)){ out.push({rule: 'R10', text: after[0].toISOString().slice(0, 10) + ' is after today (' + today.toISOString().slice(0, 10) + '), so "' + x.trim().slice(0, 80) + '" cannot have happened yet — check the source\'s date (it may be an older year).'}); break; }
@@ -543,9 +546,57 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     if(typeof MoneyBrain === 'undefined') return [];
     return MoneyBrain.lessons({app: 'ai', topic: 'mistake'}).filter(L=>!L.off).sort((a, b)=>b.n - a.n).slice(0, 5).map(L=>RULES[L.key] ? RULES[L.key] + ' (missed ' + L.n + ' time' + (L.n === 1 ? '' : 's') + ')' : '').filter(Boolean);
   }
-  function remember(issues){
+  function remember(issues, question){
     if(typeof MoneyBrain === 'undefined') return;
+    if(question) learnCase(question, issues);
     Array.from(new Set(issues.map(i=>i.rule))).forEach(r=>MoneyBrain.learn('ai', 'mistake', r, 'yes', {label: 'Answers: ' + RULES[r], why: 'Caught by the reviewer and corrected'}));
+  }
+
+  /* ================================================================ CASES: what went wrong on a particular question, remembered
+     A rule count says "you break R10 sometimes"; a case says what exactly happened, so a question like it next time
+     starts with the lesson. Kept in Money Brain (topic 'case'), so it syncs like every other lesson. */
+  const keyWords = q => Array.from(new Set(words(q).map(stem))).filter(w=>w.length > 2).sort();
+  function caseText(question, issue, today){
+    const q = '“' + String(question).trim().slice(0, 90) + '”';
+    if(issue.rule === 'R10') return 'For ' + q + ': on ' + today + ' the event (' + issue.text.slice(0, 10) + ') was still ahead; pages saying it had happened were about an older year. Check the year of every page and say it has not happened yet.';
+    if(issue.rule === 'R7') return 'For ' + q + ': ' + issue.text + ' Report expectations as expectations.';
+    if(issue.rule === 'R6') return 'For ' + q + ': the day count was added up by hand and came out wrong. Use calculate for day counts.';
+    if(issue.rule === 'R4') return 'For ' + q + ': ' + issue.text + ' Use only numbers from the pages read.';
+    if(issue.rule === 'R8') return 'For ' + q + ': ' + issue.text + ' Name only what the pages name.';
+    return '';
+  }
+  function learnCase(question, issues, o){
+    if(typeof MoneyBrain === 'undefined') return;
+    o = o || {};
+    const today = o.today || new Date().toISOString().slice(0, 10), kw = keyWords(question);
+    if(kw.length < 2) return;
+    const similar = rule => MoneyBrain.lessons({app: 'ai', topic: 'case'}).find(L=>{ const [r, w] = String(L.key).split('|'); const theirs = w.split(' '); return r === rule && theirs.filter(x=>kw.includes(x)).length / Math.max(3, kw.length, theirs.length) >= 0.6; });
+    (issues || []).forEach(i=>{
+      const text = o.text || caseText(question, i, today);
+      const same = similar(i.rule || 'you');                      // the same lesson again: made surer, not written twice
+      if(text) MoneyBrain.learn('ai', 'case', same ? same.key : (i.rule || 'you') + '|' + kw.join(' '), same && !o.text ? MoneyBrain.recall('ai', 'case', same.key, {min: 0.001}).value : text, {label: String(question).slice(0, 120), why: o.text ? 'You corrected it' : i.text, weight: o.text ? 3 : 1});
+    });
+  }
+  // lessons from questions like this one (most shared key words first)
+  function casesFor(question, max, o){
+    if(typeof MoneyBrain === 'undefined') return [];
+    const kw = keyWords(question);
+    return MoneyBrain.lessons({app: 'ai', topic: 'case'}).filter(L=>!L.off).map(L=>{
+      const theirs = String(L.key).split('|')[1].split(' '), shared = theirs.filter(w=>kw.includes(w)).length;
+      return {L, score: shared / Math.max(3, kw.length, theirs.length)};
+    }).filter(x=>x.score >= 0.6).sort((a, b)=>b.score - a.score).slice(0, max || 3).map(x=>{ const r = MoneyBrain.recall('ai', 'case', x.L.key, {min: 0.001}); return r ? r.value : ''; })
+      // "it has not happened yet" stops being true on the day: such a lesson ends then
+      .filter(t=>{ const m = /the event \((\d{4}-\d{2}-\d{2})\) was still ahead/.exec(t); return t && !(m && m[1] <= (o && o.today || new Date().toISOString().slice(0, 10))); });
+  }
+  /* Before the model starts: a question about this month or later may be about something that has not happened */
+  function timingNote(question, today){
+    today = today || new Date().toISOString().slice(0, 10);
+    const [Y, M] = today.split('-').map(Number), q = String(question);
+    const named = [];
+    for(const m of q.matchAll(/\b([A-Z][a-z]{2,8})\s+(\d{4})\b/g)){ const mo = MONTHS.indexOf(m[1].slice(0, 3).toLowerCase()); if(mo >= 0 && (+m[2] > Y || +m[2] === Y && mo + 1 >= M)) named.push(m[0]); }
+    datesIn(q).forEach(d=>{ if(d.toISOString().slice(0, 10) >= today) named.push(d.toISOString().slice(0, 10)); });
+    if(/\b(this|next) (week|month)\b|\bupcoming\b/i.test(q)) named.push(q.match(/\b(this|next) (week|month)\b|\bupcoming\b/i)[0]);
+    return named.length ? 'Timing: today is ' + today + ' and the question is about ' + named[0] + ', which is now or later — it may not have happened yet. Check the date and year of every page; old pages about the same month of an earlier year are common. If it is still ahead, say so plainly.' : '';
   }
 
   /* Web search for the apps, in the browser: this Mac's helper first (your SearXNG, pages read on the Mac, no keys),
@@ -582,7 +633,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, review, datesIn, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;

@@ -28,7 +28,9 @@ Do not invent sources or numbers.`;
 // the rules every answer is held to, your own rules (~/.money-ai/rules.md) and the mistakes it made before
 const RULEBOOK = o => (o.rules && o.rules.length ? '\nRules (your draft is checked against them and sent back if it breaks one):\n' + o.rules.map(r=>'- ' + r).join('\n') : '') +
   (o.userRules ? '\nThe user\'s own rules:\n' + o.userRules : '') +
-  (o.mistakes && o.mistakes.length ? '\nMistakes you made before — do not repeat them:\n' + o.mistakes.map(m=>'- ' + m).join('\n') : '');
+  (o.mistakes && o.mistakes.length ? '\nMistakes you made before — do not repeat them:\n' + o.mistakes.map(m=>'- ' + m).join('\n') : '') +
+  (o.cases && o.cases.length ? '\nLessons from questions like this one before (follow them):\n' + o.cases.map(m=>'- ' + m).join('\n') : '') +
+  (o.timing ? '\n' + o.timing : '');
 
 export async function runAgent(question, o){
   const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
@@ -59,7 +61,9 @@ export async function runAgent(question, o){
       // only the parts that answer the question (a small model reads only so much)
       const best = o.pick(question + ' ' + (args.looking_for || ''), page.content, 10);
       const n = numberOf(page.url || url, page.title, best);
-      return `[${n}] ${page.title}${page.published ? ' (published ' + String(page.published).slice(0, 10) + ')' : ''}\n${best.slice(0, 3500)}`;
+      const years = Array.from(new Set((String(page.content).match(/\b20[0-3]\d\b/g) || []))).sort();
+      const when = page.published ? 'published ' + String(page.published).slice(0, 10) : years.length ? 'years mentioned: ' + years.slice(-3).join(', ') : 'date not shown';
+      return `[${n}] ${page.title} (${when})\n${best.slice(0, 3500)}`;
     }
     if(name === 'calculate'){
       step('🧮 Calculating: ' + String(args.expression).slice(0, 60));
@@ -119,7 +123,7 @@ export async function runAgent(question, o){
     const calcOut = messages.filter(m=>m.role === 'tool' && m.tool_name === 'calculate').map(m=>m.content).join(' ');
     const issues = o.review ? o.review(text, {question, sources, extra: calcOut + ' ' + toolOut, searched: searches > 0, timely}) : [];
     if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
-    if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues); }
+    if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues, question); }
     // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
     const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10/.test(i.rule) ? 3 : 1), 0);
     if(!best || weight(issues) < weight(best.issues)) best = {text, issues};

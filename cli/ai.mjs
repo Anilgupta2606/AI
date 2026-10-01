@@ -9,7 +9,8 @@
      ai --json "question"       the answer as JSON (for scripts)
      ai setup                   keys for the search services and the AIs (kept in ~/.money-ai/, only on this Mac)
      ai status                  what is set up
-     ai rules                   the rules every answer is checked against, yours (~/.money-ai/rules.md) and its past mistakes
+     ai rules                   the rules every answer is checked against, yours (~/.money-ai/rules.md) and what it learned
+     ai teach "lesson"          correct the last answer; questions like it get your lesson first   (ai forget 2: drop lesson 2)
    The same engine as the apps (engine/*.js); the same search and reading as the relay (relay/worker.js) — here with
    no relay, since a terminal may call the services directly.
    ========================================================= */
@@ -27,7 +28,7 @@ const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const HOME = path.join(os.homedir(), '.money-ai');
-const CONFIG = path.join(HOME, 'config.json'), STORE = path.join(HOME, 'store.json'), RULES_FILE = path.join(HOME, 'rules.md');
+const CONFIG = path.join(HOME, 'config.json'), STORE = path.join(HOME, 'store.json'), RULES_FILE = path.join(HOME, 'rules.md'), LAST = path.join(HOME, 'last.json');
 // your own rules: one per line starting with "- " (the rest of the file is notes)
 const userRules = () => { try{ return fs.readFileSync(RULES_FILE, 'utf8').split('\n').filter(l=>/^\s*[-*]\s+\S/.test(l)).map(l=>l.replace(/^\s*[-*]\s+/, '').trim()).slice(0, 20); }catch(e){ return []; } };
 const tty = process.stdout.isTTY, C = (n, s) => tty ? `\x1b[${n}m${s}\x1b[0m` : s;
@@ -138,7 +139,7 @@ async function answer(question, o){
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
       const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step,
-        review: Web.review, datesIn: Web.datesIn, remember: Web.remember, rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
+        review: Web.review, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
   }
@@ -160,6 +161,7 @@ async function answer(question, o){
   return {text: read ? read.text : 'I could not answer that. Run  ai setup  to add a web search service or an AI key.', sources: []};
 }
 const show = (out, o) => {
+  try{ if(out && out.q) writeJson(LAST, {question: out.q, text: String(out.text || '').slice(0, 2000), at: new Date().toISOString()}); }catch(e){}
   if(o.json){ console.log(JSON.stringify(out, null, 2)); return; }
   console.log('\n' + String(out.text || '').replace(/\[(\d+)\]/g, (m)=>cyan(m)) + '\n');
   (out.sources || []).forEach((s, i)=>console.log(dim('  [' + (s.i || i + 1) + '] ' + s.title + (s.url && !/^file:/.test(s.url) ? ' — ' + s.url : ''))));
@@ -215,7 +217,27 @@ async function rules(){
   const ms = global.MoneyBrain.lessons({app: 'ai', topic: 'mistake'}).filter(L=>!L.off).sort((a, b)=>b.n - a.n);
   console.log(bold('\nMistakes it was caught making') + dim(' (it is reminded of these before every answer)') + ':' + (ms.length ? '' : dim(' none yet')));
   ms.forEach(L=>console.log('  ' + yellow(L.n + '×') + ' ' + (Web.RULES[L.key] || L.key)));
+  const cs = cases();
+  console.log(bold('\nLessons from particular questions') + dim(' (given first to questions like them; ai forget <n> drops one)') + ':' + (cs.length ? '' : dim(' none yet')));
+  cs.forEach((L, i)=>{ const r = global.MoneyBrain.recall('ai', 'case', L.key, {min: 0.001}); console.log('  ' + cyan(String(i + 1)) + ' ' + (r ? r.value : '') + dim(L.why === 'You corrected it' ? '  (you taught this)' : '')); });
   console.log('');
+}
+
+const cases = () => global.MoneyBrain.lessons({app: 'ai', topic: 'case'}).filter(L=>!L.off).sort((a, b)=>a.first - b.first);
+async function teach(lesson){
+  const cfg = config(), {Web} = engine(cfg), last = readJson(LAST, null);
+  lesson = String(lesson || '').trim();
+  if(!last || !last.question) return console.log(yellow('Ask something first; then  ai teach "what is right"  corrects that answer.'));
+  if(lesson.length < 8) return console.log(yellow('Say what is right, for example:  ai teach "The October 2026 meeting is on 5-7 October; it has not happened yet"'));
+  Web.learnCase(last.question, [{rule: 'you'}], {text: 'For “' + last.question.slice(0, 90) + '”: ' + lesson});
+  console.log(green('Learned.') + ' Questions like “' + last.question.slice(0, 70) + '” will start with your lesson.  (ai rules lists everything it learned)');
+}
+function forgetLesson(n){
+  const cfg = config(); engine(cfg);
+  const L = cases()[+n - 1];
+  if(!L) return console.log(yellow('No lesson ' + n + ' — see  ai rules'));
+  global.MoneyBrain.forget(L.id);
+  console.log(green('Forgotten: ') + String(L.label || L.key).slice(0, 80));
 }
 
 /* ---------------------------------------------------------------- the command */
@@ -231,15 +253,17 @@ async function main(){
     else if(a === '--no-ai') o.noAi = true;
     else if(a === '--deep') o.deep = true;
     else if(a === '--classic') o.classic = true;
-    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 14).join('\n').replace(/^\s*/gm, '')); return; }
+    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 15).join('\n').replace(/^\s*/gm, '')); return; }
     else rest.push(a);
   }
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
   if(rest[0] === 'rules' && rest.length === 1) return rules();
+  if(rest[0] === 'teach' && rest.length > 1) return teach(rest.slice(1).join(' '));
+  if(rest[0] === 'forget' && /^\d+$/.test(rest[1] || '') && rest.length === 2) return forgetLesson(rest[1]);
   if(rest[0] === 'serve'){ (await import('./serve.mjs')).serve(); return; }      // the local helper for the website (normally started at login)
   if(rest.length){
-    try{ show(await answer(rest.join(' '), o), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
+    try{ const q = rest.join(' '); show(Object.assign(await answer(q, o), {q}), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
     return;
   }
   // a conversation
@@ -250,12 +274,13 @@ async function main(){
     const q = line.trim();
     if(!q){ rl.prompt(); continue; }
     if(q === '/exit' || q === '/quit') break;
-    if(q === '/help'){ console.log(dim('  Ask a question. /file <path> to add a file · /clear to start over · /status · /exit')); rl.prompt(); continue; }
+    if(q.startsWith('/wrong ')){ await teach(q.slice(7)); rl.prompt(); continue; }
+    if(q === '/help'){ console.log(dim('  Ask a question. /wrong <what is right> to correct the last answer · /file <path> to add a file · /clear to start over · /status · /exit')); rl.prompt(); continue; }
     if(q === '/status'){ await status(); rl.prompt(); continue; }
     if(q === '/clear'){ o.history = []; o.files = []; console.log(dim('  Started over.')); rl.prompt(); continue; }
     if(q.startsWith('/file ')){ o.files.push(q.slice(6).trim()); console.log(dim('  Added ' + q.slice(6).trim())); rl.prompt(); continue; }
     try{
-      const out = await answer(q, o);
+      const out = Object.assign(await answer(q, o), {q});
       show(out, o);
       o.history = o.history.concat([{role: 'user', content: q}, {role: 'assistant', content: String(out.text).slice(0, 1500)}]).slice(-6);
     }catch(e){ console.error(red('✗ ' + e.message)); }
