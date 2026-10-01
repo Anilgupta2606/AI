@@ -105,12 +105,19 @@ async function answer(question, o){
   // a follow-up ("and for 10 years?", "what about Bank Nifty?") needs the conversation, so it goes to the model, not the quick tools
   const followUp = (o.history || []).length && /^(and|also|what about|how about|then|so|but|same|now|ok|okay|why|what if)\b|\b(it|that|this|those|them|these|same|above|previous|earlier)\b/i.test(question.trim()) && question.trim().split(/\s+/).length < 14;
   const attached = (o.attachments || []).length > 0;
+  // about earlier chats ("what did you tell me…"): that is for the AI with your chats, not the quick tools
+  const aboutPast = /\b(you (told|said|suggested|gave|recommended)|did you (tell|say)|we (discussed|talked)|last time|earlier (chat|conversation|question)|previous (chat|conversation)|my (earlier|previous|last) (question|chat))\b/i.test(question);
+  // the same question a moment ago (no files, not a follow-up): at once
+  if(!fileSources.length && !followUp && !o.fresh && !attached && !aboutPast && !(o.history || []).length){
+    const c = cached(question, Web);
+    if(c){ done(); return Object.assign(c, {saved: true, by: 'Answered ' + (c.ageMin ? c.ageMin + ' min ago' : 'just now') + ' (the same question) · ' + (c.by || '')}); }
+  }
   // an answer you marked 👍 for this same question (settled facts only), unless you ask for it fresh
-  if(!fileSources.length && !followUp && !o.fresh && !attached){
+  if(!fileSources.length && !followUp && !o.fresh && !attached && !aboutPast){
     const g = Web.findGood(question);
     if(g){ done(); return {text: g.text, sources: g.sources || [], model: 'Your saved answer', saved: true, by: 'Your saved answer from ' + g.at + ' (you marked it 👍)' + (g.model ? ' · first written by ' + g.model : '')}; }
   }
-  if(!fileSources.length && !o.deep && !followUp && !attached){
+  if(!fileSources.length && !o.deep && !followUp && !attached && !aboutPast){
     step('Checking what can be worked out or looked up exactly…');
     const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
     if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick); }
@@ -192,10 +199,11 @@ async function answer(question, o){
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
       const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see, signal: o.signal,
+        trustOf: Web.trustOf, trustRank: u => Web.TRUST_RANK[Web.trustOf(u)] || 0, searchChats: (q, n) => searchSessions(q, n),
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
         cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}, o.signal) : null,
         market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
-      done(); return out;
+      done(); if(!(o.history || []).length && !attached) keepAnswer(question, out); return out;
     }
   }
   // 3. no model on this Mac: the classic way (search, read, then an online AI answers)
@@ -215,6 +223,8 @@ async function answer(question, o){
   done();
   return {text: read ? read.text : 'I could not answer that. Run  ai setup  to add a web search service or an AI key.', sources: []};
 }
+const trustLine = v => v ? (v.confidence === 'High' ? green('  ✓ Confidence high') : v.confidence === 'Low' ? red('  ⚠ Confidence low') : yellow('  ~ Confidence medium')) + dim(' — ' + v.supported + ' of ' + v.checked + ' claims backed by the sources' + (v.by ? ' (checked by ' + v.by + ')' : '')) +
+  (v.contradicted.length ? '\n' + v.contradicted.map(c=>red('    ✗ ') + c.claim.slice(0, 140) + dim(c.why ? ' — ' + c.why : '')).join('\n') : '') : '';
 const show = (out, o) => {
   try{ if(out && out.q) writeJson(LAST, {question: out.q, text: String(out.text || '').slice(0, 2000), at: new Date().toISOString()}); }catch(e){}
   if(o.json){ console.log(JSON.stringify(out, null, 2)); return; }
@@ -309,6 +319,71 @@ export function feedback({question, good, note, answer}){
 }
 export function forgetId(id){ const cfg = config(); engine(cfg); const L = cases().concat(global.MoneyBrain.lessons({app: 'ai', topic: 'profile'})).find(x=>x.id === id); if(!L) return false; global.MoneyBrain.forget(id); return true; }
 export {answer};
+/* SECOND OPINION: another pass, strict and narrow — each claim judged only against its own evidence
+   (supported / not found / contradicted). A fast cloud model when cloud is on (a different model from the one that
+   wrote it), else a JSON-only local pass. It sets the final confidence; a contradiction is remembered as a lesson. */
+export async function verifyClaims(out, question, o){
+  o = o || {};
+  const t = out && out.trust; if(!t || !t.claims || !t.claims.length) return null;
+  const cfg = config(), {AI, Web} = engine(cfg);
+  const prompt = 'Judge each claim ONLY from its evidence (text read from the web or files). SUPPORTED: the evidence states it (numbers must match). NOT_FOUND: the evidence does not say it. CONTRADICTED: the evidence says something different.\n\n' +
+    t.claims.map((c, i)=>`Claim ${i + 1}: ${c.claim.replace(/\[\d+\]/g, '')}\nEvidence ${i + 1}: ${c.evidence || '(none)'}`).join('\n\n') +
+    '\n\nReply with JSON only: {"verdicts":[{"n":1,"v":"SUPPORTED|NOT_FOUND|CONTRADICTED","why":"under 15 words"}]}';
+  let raw = '', by = '';
+  try{
+    if(cloudNames().length && (cfg.ai.cloud || o.cloud)){
+      let r = null;
+      for(const only of [['groq', 'cerebras'], ['gemini', 'mistral', 'openrouter']]){ try{ r = await AI.chat('You are a strict fact checker. Output JSON only.', [{role: 'user', content: prompt}], {only, maxTokens: 500}, o.signal); break; }catch(e){} }
+      if(r){ raw = r.text; by = r.provider + ' · ' + r.model; }
+    }
+    if(!raw){
+      const host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
+      if(!host || !m) return null;
+      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt: 'You are a strict fact checker. Output JSON only.\n\n' + prompt, format: 'json', stream: false, think: false, keep_alive: '30m', options: {temperature: 0, num_predict: 400, num_ctx: 8192}})});
+      raw = (await r.json()).response || ''; by = m + ' (second pass)';
+    }
+  }catch(e){ return null; }
+  let v = []; try{ v = (JSON.parse(String(raw).slice(String(raw).indexOf('{'), String(raw).lastIndexOf('}') + 1)).verdicts || []); }catch(e){ return null; }
+  const at = n => (v.find(x=>+x.n === n) || {});
+  const res = t.claims.map((c, i)=>({claim: c.claim, v: String(at(i + 1).v || 'NOT_FOUND').toUpperCase().replace(/\s+/g, '_'), why: String(at(i + 1).why || '').slice(0, 120), numbersOk: c.ok}));
+  // a claim whose figures are not in the evidence is not "supported", whatever the checker says
+  res.forEach(r=>{ if(r.v === 'SUPPORTED' && !r.numbersOk) r.v = 'NOT_FOUND'; });
+  const supported = res.filter(r=>r.v === 'SUPPORTED').length, contra = res.filter(r=>r.v === 'CONTRADICTED'), missing = res.filter(r=>r.v === 'NOT_FOUND');
+  let confidence = contra.length ? 'Low' : missing.length * 2 >= res.length ? 'Low' : supported === res.length && t.confidence !== 'Low' && (t.domains >= 2 || t.trusted >= 1) ? 'High' : 'Medium';
+  if(contra.length && question) Web.remember(contra.map(c=>({rule: 'R12', text: 'Contradicted by its own sources: "' + c.claim.slice(0, 120) + '"'})), question);
+  return {confidence, checked: res.length, supported, notFound: missing.map(r=>r.claim), contradicted: contra.map(r=>({claim: r.claim, why: r.why})), by, claims: res};
+}
+
+/* the same question again soon: answered at once (30 minutes for things that change, a day for the rest) */
+const CACHE = path.join(HOME, 'cache.json');
+const cacheKey = q => String(q).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+function cached(q, Web){ const c = readJson(CACHE, {})[cacheKey(q)]; if(!c) return null; const age = Date.now() - c.at; return age < (Web.isTimely(q) ? 30 * 60000 : 24 * 3600000) ? Object.assign({}, c.out, {ageMin: Math.round(age / 60000)}) : null; }
+function keepAnswer(q, out){
+  if(!out || !out.text || /Stopped|could not finish/.test(out.text)) return;
+  const all = readJson(CACHE, {}); all[cacheKey(q)] = {at: Date.now(), out: {text: out.text, sources: out.sources, read: out.read, by: out.by, model: out.model, chart: out.chart, trust: out.trust}};
+  const keep = Object.entries(all).sort((a, b)=>b[1].at - a[1].at).slice(0, 60);
+  try{ writeJson(CACHE, Object.fromEntries(keep)); }catch(e){}
+}
+
+/* three short follow-up questions for an answer: a fast cloud model when cloud is on, else a short local run */
+export async function followUps(question, text, o){
+  o = o || {};
+  if(!text || /no AI\)|Your saved answer/.test(o.by || '')) return [];
+  const cfg = config(), {AI} = engine(cfg);
+  const prompt = 'Question: ' + String(question).slice(0, 400) + '\n\nAnswer: ' + String(text).replace(/```[\s\S]*?```/g, '[code]').slice(0, 1500) +
+    '\n\nWrite 3 short follow-up questions the user is likely to ask next (each under 12 words, in the same language as the question). One per line, no numbers, no quotes, nothing else.';
+  let out = '';
+  try{
+    if(cfg.ai.cloud && cloudNames().length){ const r = await AI.chat('You suggest follow-up questions.', [{role: 'user', content: prompt}], {skip: ['ollama', 'webllm'], maxTokens: 120, tier: 'fast'}, o.signal); out = r.text; }
+    else {
+      const host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
+      if(!host || !m) return [];
+      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt, stream: false, think: false, keep_alive: '30m', options: {temperature: 0.4, num_predict: 90, num_ctx: 4096}})});
+      out = (await r.json()).response || '';
+    }
+  }catch(e){ return []; }
+  return String(out).split('\n').map(l=>l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').replace(/^["']|["']$/g, '').trim()).filter(l=>l.length > 6 && l.length < 120 && /\?$/.test(l)).slice(0, 3);
+}
 export async function warm(){
   const cfg = config(), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
   if(!host || !m) return false;
@@ -437,6 +512,23 @@ export function saveSession(x){
   listSessions().slice(100).forEach(o=>{ try{ fs.unlinkSync(path.join(SESSIONS, o.id + '.json')); }catch(e){} });
   return s2.id;
 }
+/* search every chat (questions and answers): all the words must appear; newest first, with the matching part */
+export function searchSessions(q, limit){
+  const words = String(q || '').toLowerCase().split(/\s+/).filter(w=>w.length > 1).slice(0, 8);
+  if(!words.length) return [];
+  const out = [];
+  for(const x of listSessions()){
+    const full = loadSession(x.id); if(!full) continue;
+    (full.turns || []).forEach((t, i)=>{
+      const a = String((t.answer || {}).text || ''), hay = (t.q + '\n' + a).toLowerCase();
+      if(!words.every(w=>hay.includes(w))) return;
+      const at = Math.max(0, a.toLowerCase().indexOf(words[0]) - 80);
+      out.push({id: full.id, title: full.title, updated: full.updated, turn: i, q: t.q, snippet: (at ? '…' : '') + a.slice(at, at + 260).replace(/\s+/g, ' ')});
+    });
+    if(out.length >= (limit || 20)) break;
+  }
+  return out.slice(0, limit || 20);
+}
 export function deleteSession(id){ if(!okId(id)) return false; try{ fs.unlinkSync(path.join(SESSIONS, id + '.json')); return true; }catch(e){ return false; } }
 const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 function printSessions(list){
@@ -464,6 +556,53 @@ async function pickSession(arg, inConversation){
   const a = await ask('\nResume which? ' + dim('[1] '));
   const n = /^\d+$/.test(a) ? +a : 1;
   return list[n - 1] ? loadSession(list[n - 1].id) : null;
+}
+
+/* ---------------------------------------------------------------- SCHEDULED TASKS: a question asked for you at a time
+   ~/.money-ai/tasks.json. The helper (always running) checks every minute; each result is added to the task's own
+   chat (⏰ in the list) and macOS shows a notification. A time missed while the Mac slept runs when it wakes. */
+const TASKS = path.join(HOME, 'tasks.json');
+const DAYSETS = {daily: [0, 1, 2, 3, 4, 5, 6], weekdays: [1, 2, 3, 4, 5], weekends: [0, 6]};
+export function listTasks(){ return (readJson(TASKS, {list: []}).list || []); }
+function writeTasks(list){ writeJson(TASKS, {list}); return list; }
+export function saveTask(t){
+  const list = listTasks();
+  const days = Array.isArray(t.days) ? t.days.map(Number).filter(d=>d >= 0 && d <= 6) : DAYSETS[t.days] || DAYSETS.daily;
+  const clean = {id: okId(t.id) ? t.id : newId(), prompt: String(t.prompt || '').trim().slice(0, 1000), time: /^([01]\d|2[0-3]):[0-5]\d$/.test(t.time) ? t.time : '09:00', days: days.length ? days : DAYSETS.daily, on: t.on !== false, cloud: !!t.cloud};
+  if(clean.prompt.length < 4) return null;
+  const old = list.find(x=>x.id === clean.id);
+  if(old) Object.assign(old, clean); else list.push(Object.assign(clean, {last: '', sessionId: newId()}));
+  writeTasks(list);
+  return clean.id;
+}
+export function deleteTask(id){ writeTasks(listTasks().filter(t=>t.id !== id)); return true; }
+let taskRunning = false;
+export async function runTask(id){
+  const list = listTasks(), t = list.find(x=>x.id === id);
+  if(!t || taskRunning) return null;
+  taskRunning = true;
+  try{
+    const sess = loadSession(t.sessionId) || {id: t.sessionId, source: 'task', turns: []};
+    const out = await answer(t.prompt, {history: [], files: [], cloud: t.cloud});
+    sess.turns.push({q: t.prompt + '  (⏰ ' + new Date().toLocaleString('en-IN', {dateStyle: 'medium', timeStyle: 'short'}) + ')', answer: {text: out.text, sources: out.sources || [], by: out.by || '', model: out.model || '', chart: out.chart || null}});
+    saveSession({id: sess.id, title: '⏰ ' + t.prompt, source: 'task', turns: sess.turns});
+    t.last = new Date().toISOString().slice(0, 10); t.lastAt = new Date().toISOString();
+    writeTasks(list);
+    // a notification on this Mac (the first line of the answer)
+    if(process.platform === 'darwin'){ try{ const msg = String(out.text).replace(/[#*`>\[\]]/g, '').replace(/\s+/g, ' ').slice(0, 180).replace(/["\\]/g, ''); (await import('child_process')).execFile('osascript', ['-e', 'display notification "' + msg + '" with title "AI — ' + t.prompt.slice(0, 40).replace(/["\\]/g, '') + '"']); }catch(e){} }
+    return out;
+  }finally{ taskRunning = false; }
+}
+// every minute: what is due today and not yet run
+export async function tick(){
+  const now = new Date(), hm = now.toTimeString().slice(0, 5), today = now.toISOString().slice(0, 10);
+  for(const t of listTasks()) if(t.on !== false && t.days.includes(now.getDay()) && hm >= t.time && t.last !== today){ await runTask(t.id).catch(()=>{}); break; }
+}
+const dayText = d => JSON.stringify(d) === JSON.stringify(DAYSETS.daily) ? 'every day' : JSON.stringify(d) === JSON.stringify(DAYSETS.weekdays) ? 'weekdays' : JSON.stringify(d) === JSON.stringify(DAYSETS.weekends) ? 'weekends' : d.map(x=>['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][x]).join(', ');
+function printTasks(){
+  const list = listTasks();
+  if(!list.length) return console.log(dim('  No scheduled tasks. Add one:  ai task add 09:00 "Nifty summary with chart"   (weekdays: ai task add weekdays 09:00 "…")'));
+  list.forEach((t, i)=>console.log('  ' + cyan(String(i + 1)) + ' ' + (t.on !== false ? green('on ') : yellow('off')) + ' ' + t.time + ' ' + dim(dayText(t.days).padEnd(10)) + ' ' + t.prompt.slice(0, 70) + dim(t.last ? '  · last ' + t.last : '')));
 }
 
 /* ---------------------------------------------------------------- help: the guide and your settings as they are now */
@@ -532,6 +671,18 @@ async function main(){
   if(rest[0] === 'cloud' && rest.length <= 2) return setCloud(rest[1]);
   if((rest[0] === 'off' || rest[0] === 'on') && rest.length === 2) return setTool(rest[1], rest[0] === 'on');
   if(rest[0] === 'connectors' && rest.length === 1) return listConnectors();
+  if(rest[0] === 'tasks' && rest.length === 1){ console.log(bold('\nScheduled tasks') + dim('  (run by the helper; results in their own chat, ⏰)')); printTasks(); return; }
+  if(rest[0] === 'task'){
+    const list = listTasks(), [, verb, ...more] = rest;
+    if(verb === 'add'){ let days = 'daily'; if(DAYSETS[more[0]]) days = more.shift(); const time = more.shift(), prompt = more.join(' ');
+      const id = saveTask({time, days, prompt}); console.log(id ? green('Scheduled: ') + (time || '09:00') + ' ' + days + ' — ' + prompt : yellow('ai task add [daily|weekdays|weekends] HH:MM "what to ask"')); return; }
+    const t = list[+more[0] - 1];
+    if(!t) return console.log(yellow('ai task add | run <n> | on <n> | off <n> | rm <n>   (numbers from ai tasks)'));
+    if(verb === 'rm'){ deleteTask(t.id); console.log(dim('Removed: ') + t.prompt); return; }
+    if(verb === 'on' || verb === 'off'){ saveTask(Object.assign({}, t, {on: verb === 'on'})); console.log((verb === 'on' ? green('On: ') : yellow('Off: ')) + t.prompt); return; }
+    if(verb === 'run'){ console.log(dim('Running: ') + t.prompt); const out = await runTask(t.id); if(out) show(Object.assign(out, {q: t.prompt}), o); return; }
+    return console.log(yellow('ai task add | run <n> | on <n> | off <n> | rm <n>'));
+  }
   if((rest[0] === 'sessions' || rest[0] === 'chats') && rest.length === 1){ console.log(bold('\nYour chats') + dim('  (ai --resume <number> to continue one)')); printSessions(listSessions()); return; }
   if(rest[0] === 'help' && rest.length === 1) return showHelp(o);
   if(rest[0] === 'teach' && rest.length > 1) return teach(rest.slice(1).join(' '));
@@ -541,7 +692,8 @@ async function main(){
     (await import('child_process')).execFile('open', [url]); console.log('Your AI is open at ' + url + (up ? '' : dim('  (running here; Ctrl+C stops it)'))); return; }
   if(rest[0] === 'serve'){ (await import('./serve.mjs')).serve(); return; }      // the local helper for the website (normally started at login)
   if(rest.length){
-    try{ const q = rest.join(' '); show(Object.assign(await answer(q, o), {q}), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
+    try{ const q = rest.join(' '); const out = Object.assign(await answer(q, o), {q}); show(out, o);
+      if(out.trust && !out.saved && !o.json){ if(tty) process.stderr.write(dim('  checking the claims…') + '\r'); const v = await verifyClaims(out, q, o).catch(()=>null); if(tty) process.stderr.write('\r\x1b[K'); if(v) console.log(trustLine(v) + '\n'); } }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
     return;
   }
   // a conversation (a new one, or a chat resumed with --resume)
@@ -549,15 +701,16 @@ async function main(){
   if(!o.session) o.session = {id: newId(), source: 'terminal', turns: []};
   const keep = (q, out) => { o.session.turns.push({q, answer: {text: out.text, sources: out.sources || [], by: out.by || '', model: out.model || '', chart: out.chart || null}}); o.session.goal = o.goal || ''; saveSession(o.session); };
   console.log(bold('AI') + dim(' — ask anything; it works out, looks up and reads the web. /help for every command and setting, /exit to leave'));
-  let lastOut = null;
+  let lastOut = null, lastFollow = [];
   const rl = readline.createInterface({input: process.stdin, output: process.stdout, prompt: cyan('› ')});
   let closed = false; rl.on('close', ()=>{ closed = true; });
   const prompt = () => { if(!closed) try{ rl.prompt(); }catch(e){} };      // input may end while an answer is still coming
   prompt();
   for await (const line of rl){
-    const q = line.trim();
+    let q = line.trim();
     if(!q){ prompt(); continue; }
     if(q === '/exit' || q === '/quit') break;
+    if(/^[1-3]$/.test(q) && lastFollow[+q - 1]){ const f = lastFollow[+q - 1]; console.log(cyan('› ') + f); q = f; }
     // commands: the same as on the page (/help lists them with your settings)
     const cm = /^\/(\w+)\s*([\s\S]*)$/.exec(q);
     if(cm){
@@ -586,6 +739,8 @@ async function main(){
       const out = Object.assign(await answer(q, o), {q});
       lastOut = out;
       keep(q, out);
+      if(out.trust && !out.saved){ const v = await verifyClaims(out, q, o).catch(()=>null); if(v) console.log(trustLine(v) + '\n'); }
+      if(tty){ lastFollow = await followUps(q, out.text, {by: out.by}).catch(()=>[]); if(lastFollow.length) console.log(dim('  Next: ') + lastFollow.map((f, i)=>cyan(String(i + 1)) + ' ' + f).join(dim('  ·  ')) + '\n'); }
       show(out, o);
       o.history = o.history.concat([{role: 'user', content: q}, {role: 'assistant', content: String(out.text).slice(0, 1500)}]).slice(-6);
     }catch(e){ console.error(red('✗ ' + e.message)); }

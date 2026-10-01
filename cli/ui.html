@@ -75,6 +75,7 @@ body{padding-left:var(--sb)}
 .chat:hover{background:var(--page)} .chat.cur{background:var(--think-bg); color:var(--ink); font-weight:600}
 .chat .ct{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .chat .src{font-size:11px; color:var(--mut); flex:none}
+.chat.hit{align-items:flex-start} .chat.hit .ct{white-space:normal} .chat.hit b{display:block; font-weight:600; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap} .chat.hit small{display:block; font-size:12px; color:var(--mut); line-height:1.35; max-height:2.7em; overflow:hidden}
 .chat .del{border:0; background:none; color:var(--mut); cursor:pointer; font-size:15px; width:24px; height:24px; border-radius:7px; visibility:hidden; flex:none}
 .chat:hover .del,.chat.cur .del{visibility:visible} .chat .del:hover{color:var(--check); background:var(--check-bg)}
 .sbnav{display:flex; flex-direction:column; gap:2px; border-top:1px solid var(--line); padding-top:8px}
@@ -201,6 +202,14 @@ details.also{margin-top:10px} details.also summary{cursor:pointer; font-size:13p
 .ghost:hover{border-color:var(--check); color:var(--check)}
 .foot .up,.foot .down{padding:4px 10px} .foot .up:hover{border-color:var(--read); color:var(--read)}
 .thanks{font-size:12.5px}
+.badges{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 12px} .badges .model{margin:0}
+.conf{display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:600; border-radius:999px; padding:3px 10px}
+.conf.high{background:var(--read-bg); color:var(--ok)} .conf.medium{background:var(--calc-bg); color:var(--warn-ink)} .conf.low{background:var(--check-bg); color:var(--err)}
+.conf.pending{background:var(--page); color:var(--mut)} .conf.pending::before{content:''; width:8px; height:8px; border-radius:50%; background:var(--orb); animation:turn 1.2s linear infinite}
+.tr{font-style:normal; font-weight:700} .tr.official{color:var(--ok)} .tr.reference{color:var(--search)} .tr.news{color:var(--think)}
+.follow{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px}
+.fchip2{border:1px solid var(--line); background:var(--page); color:var(--ink2); border-radius:999px; padding:6px 12px; font-size:13px; cursor:pointer; text-align:left}
+.fchip2:hover{border-color:var(--think); color:var(--think)} .fchip2::before{content:'↳ '; color:var(--mut)}
 .teach{display:flex; gap:8px; margin-top:12px}
 .teach input{flex:1; min-width:0; background:var(--page); border:1px solid var(--line); border-radius:12px; padding:9px 12px}
 .err{color:var(--err)}
@@ -277,6 +286,11 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .sw input{margin-top:3px; accent-color:var(--read); width:16px; height:16px}
 .sw small{display:block; color:var(--mut); font-size:12.5px; line-height:1.4; word-break:break-all}
 .sw .x{margin-left:auto}
+.trow2{display:flex; gap:10px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--line); font-size:14px}
+.trow2 .tt{flex:1; min-width:0} .trow2 small{display:block; color:var(--mut); font-size:12.5px}
+.trow2 .acts{display:flex; gap:6px; flex-wrap:wrap}
+.cform select{background:var(--page); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px; color:var(--ink)}
+.cform .two{display:flex; gap:8px} .cform .two > *{flex:1}
 .cform{display:flex; flex-direction:column; gap:8px; margin-top:10px}
 .cform input{background:var(--page); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px}
 .toast{position:fixed; left:calc(50% + var(--sb) / 2); bottom:120px; transform:translateX(-50%); background:var(--ink); color:var(--page); border-radius:999px; padding:9px 18px; font-size:14px; font-weight:600; z-index:30; box-shadow:var(--shadow); max-width:90vw}
@@ -307,6 +321,7 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
   <input class="sbsearch" id="chatSearch" type="search" placeholder="Search chats" aria-label="Search chats">
   <nav class="chatlist" id="chats" aria-label="Your chats"></nav>
   <div class="sbnav">
+    <button class="navbtn" id="openTasks" type="button"><i>⏰</i>Scheduled</button>
     <button class="navbtn" id="openConn" type="button"><i>🔌</i>Connectors</button>
     <button class="navbtn" id="openLearned" type="button"><i>✦</i><span>What it learned</span><b class="count" id="learnedCount" hidden></b></button>
   </div>
@@ -383,6 +398,12 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 
 <div class="scrim" id="scrim"></div>
 
+<aside class="panel" id="taskPanel" aria-label="Scheduled tasks">
+  <button class="ghost close" id="closeTasks">Close</button>
+  <h2>Scheduled</h2>
+  <p class="sub">A question asked for you at a time — "every weekday at 9:15, a Nifty summary". Each result lands in its own chat (⏰) with a notification on your Mac. Runs while the Mac is awake; a time it slept through runs when it wakes.</p>
+  <div id="tasks"></div>
+</aside>
 <aside class="panel" id="connPanel" aria-label="Connectors">
   <button class="ghost close" id="closeConn">Close</button>
   <h2>Connectors</h2>
@@ -448,7 +469,7 @@ function markdown(text, urls){
   return out.join('');
 }
 const srcCard = (s, i) => { const h = host(s.url) || s.title || ''; const web = s.url && !/^file:/.test(s.url);
-  return `<li><a ${web ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : ''} title="${esc(s.url || s.title)}"><span class="av" style="background:hsl(${hue(h)} 65% 55%)">${esc((h || '?')[0].toUpperCase())}</span><span class="tx"><b>${esc(s.title || h)}</b><small>${s.i || i + 1} · ${esc(h)}</small></span></a></li>`; };
+  return `<li><a ${web ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : ''} title="${esc(s.url || s.title)}"><span class="av" style="background:hsl(${hue(h)} 65% 55%)">${esc((h || '?')[0].toUpperCase())}</span><span class="tx"><b>${esc(s.title || h)}</b><small>${s.i || i + 1} · ${esc(h)}${s.trust && s.trust !== 'other' ? ` · <em class="tr ${esc(s.trust)}">${esc(s.trust)}</em>` : ''}</small></span></a></li>`; };
 /* the price chart of a market answer: closes, the 20/50/200 averages, support (mint) and resistance (coral) */
 function chartSvg(ch){
   if(!ch || !ch.c || ch.c.length < 10) return '';
@@ -518,11 +539,13 @@ function finish(el, q, out, steps, traces){
   const n = traces.length || steps.length, dots = traces.length ? traces.map(t=>`<i class="${KIND[t.kind] || 'think'}"></i>`) : steps.map(s=>`<i class="${s.k}"></i>`);
   el.querySelector('.work').outerHTML = n ? `<details class="how"><summary><span class="dots">${dots.join('')}</span>How it got here · ${n} step${n === 1 ? '' : 's'}${out.secs ? ' · ' + out.secs + ' s' : ''}</summary>${traces.length ? timeline(traces) : `<div class="steps">${steps.map(s=>stepHtml(s)).join('')}</div>`}</details>` : '';
   const model = out.model || (/no AI/.test(out.by || '') ? 'Worked out exactly (no AI)' : '');
-  el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">✦ ${esc(model)}</span>` : ''}${render(out)}
+  const badge = out.verify ? trustBadge(out.verify) : out.trust && !out.saved && busy ? `<span class="conf pending" title="A second model is checking each claim against the sources">Checking claims…</span>` : '';
+  el.querySelector('.slot').innerHTML = `<div class="a"><div class="badges">${model ? `<span class="model" title="The AI model that wrote this answer">✦ ${esc(model)}</span>` : ''}${badge}</div>${render(out)}
     <div class="foot"><span class="by">${esc(out.by || '')}</span>${out.saved ? '<button class="ghost fresh" type="button">Ask fresh</button>' : ''}<button class="ghost cp" type="button" title="Copy the answer">Copy</button><button class="ghost rt" type="button" title="Ask again from scratch">Retry</button><button class="ghost up" type="button" title="Good answer — keep it">👍</button><button class="ghost down" type="button" title="Wrong — tell it what is right">👎</button></div></div>`;
   el.querySelector('.foot .down').onclick = () => teachBox(el, q);
   el.querySelector('.foot .cp').onclick = e => { const b = e.currentTarget; (navigator.clipboard ? navigator.clipboard.writeText(out.text || '') : Promise.reject()).then(()=>{ b.textContent = 'Copied'; setTimeout(()=>{ b.textContent = 'Copy'; }, 1500); }).catch(()=>toast('Select the text to copy it')); };
   el.querySelector('.foot .rt').onclick = () => ask(q, {fresh: true});
+  if(out.followups && out.followups.length) setTimeout(()=>showFollow(el, out.followups));
   el.querySelector('.foot .up').onclick = async e => {
     const b = e.currentTarget; b.disabled = true;
     const r = await api.feedback({question: q, good: true, answer: {text: out.text, sources: out.sources, model: out.model}}).catch(()=>({}));
@@ -530,6 +553,23 @@ function finish(el, q, out, steps, traces){
     loadLearned();
   };
   const fr = el.querySelector('.foot .fresh'); if(fr) fr.onclick = () => ask(q, {fresh: true});
+}
+// confidence: how well the claims are backed by what was read (a second model's check)
+const trustBadge = v => `<span class="conf ${esc(String(v.confidence).toLowerCase())}" tabindex="0" title="${esc(v.supported + ' of ' + v.checked + ' claims backed by the sources' + (v.by ? ' — checked by ' + v.by : ''))}">${v.confidence === 'High' ? '✓' : v.confidence === 'Low' ? '⚠' : '~'} ${esc(v.confidence)} confidence · ${v.supported}/${v.checked} claims backed</span>`;
+function showVerify(el, v){
+  const a = el.querySelector('.a'); if(!a) return;
+  const b = a.querySelector('.conf'); if(b) b.outerHTML = trustBadge(v); else { const bs = a.querySelector('.badges'); if(bs) bs.insertAdjacentHTML('beforeend', trustBadge(v)); }
+  if(v.contradicted && v.contradicted.length) a.querySelector('.badges').insertAdjacentHTML('afterend', `<div class="warn">⚠ The sources say otherwise about: ${v.contradicted.map(c=>'“' + esc(c.claim.replace(/\[\d+\]/g, '').slice(0, 140)) + '”' + (c.why ? ' (' + esc(c.why) + ')' : '')).join('; ')}</div>`);
+  const qd = el.querySelector('.q div'), h = history.find(x=>x.answer && qd && x.q === qd.firstChild.textContent);
+  if(h){ h.answer.verify = v; store.set('moneyai.history', history); saveChat(); }
+}
+// suggested next questions under an answer: one tap asks it
+function showFollow(el, list){
+  const a = el.querySelector('.a'); if(!a || !list.length || a.querySelector('.follow')) return;
+  a.insertAdjacentHTML('beforeend', `<div class="follow">${list.map(f=>`<button type="button" class="fchip2">${esc(f)}</button>`).join('')}</div>`);
+  a.querySelectorAll('.fchip2').forEach(b=>b.onclick = () => ask(b.textContent));
+  const h = history.find(x=>x.answer && x.answer.text && el.querySelector('.q div') && x.q === el.querySelector('.q div').firstChild.textContent);
+  if(h){ h.answer.followups = list; store.set('moneyai.history', history); saveChat(); }
 }
 function teachBox(el, q){
   if(el.querySelector('.teach')) return el.querySelector('.teach input').focus();
@@ -566,10 +606,11 @@ async function ask(q, opt){
   };
   step('Starting');
   const turns = history.slice(-3).flatMap(h=>[{role: 'user', content: h.q}, {role: 'assistant', content: String(h.answer.text || '').slice(0, 1500)}]);
+  let doneShown = false;
   const done = out => {
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
     finish(el, q, out, steps, traces);
-    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart}, steps, traces: slim(traces)});
+    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart, trust: out.trust ? {confidence: out.trust.confidence, checked: out.trust.checked, ok: out.trust.ok} : undefined, saved: out.saved}, steps, traces: slim(traces)});
     history = history.slice(-40).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
     store.set('moneyai.history', history);
     setTitle();
@@ -577,6 +618,16 @@ async function ask(q, opt){
   };
   try{
     await ready;
+    // YOUR APPS: Money Home's own exact answers first (spending, income, net worth, trips, documents); else, for a
+    // question about your money or travel, the summary goes along as a source
+    const snap = !disabled.includes('apps') && !LOCAL_PAGE ? store.get('money-apps-snapshot', null) : null;
+    if(snap && snap.data){
+      if(typeof MoneyAsk === 'undefined'){ try{ await loadScript('/ai/ask.js'); }catch(e){} }
+      const own = typeof MoneyAsk !== 'undefined' && !files.length ? (()=>{ try{ return MoneyAsk.answer(q, snap.data); }catch(e){ return null; } })() : null;
+      if(own && own.text){ step('📊 Answered from your apps'); done({text: own.text, sources: [], model: 'Your apps — worked out exactly (no AI)', by: (own.by || 'Your apps') + ' · as of ' + String(snap.at).slice(0, 10)}); busy = false; sendState(false); $('#orb').classList.remove('busy'); return; }
+      if(/\b(my|mine|our|i|me)\b/i.test(q) && /\b(spen[dt]|spending|expenses?|income|salary|invest(ed|ment|ments)?|portfolio|net ?worth|sips?|savings?|budget|loans?|emi|plan|retire(ment)?|corpus|trips?|flights?|hotels?|travel|passport|visa|documents?)\b/i.test(q) && snap.ctx)
+        files.push({name: 'Your apps (Money Home, as of ' + String(snap.at).slice(0, 10) + ').txt', text: snap.ctx});
+    }
     if(mode === 'browser'){
       const t0 = Date.now();
       opt_fresh = !!opt.fresh; opt_files = files;
@@ -601,14 +652,16 @@ async function ask(q, opt){
           if(m.trace) addTrace(m.trace);
           if(m.draft != null){ const d = el.querySelector('.draft'); if(d){ d.hidden = !String(m.draft).trim(); d.innerHTML = '<div class="dlabel">Writing…</div>' + markdown(m.draft, {}); } }
           if(m.error) throw new Error(m.error);
-          if(m.answer) out = m.answer;
+          if(m.answer){ out = m.answer; done(out); doneShown = true; }
+          if(m.followups && doneShown) showFollow(el, m.followups);
+          if(m.verify && doneShown) showVerify(el, m.verify);
         }
       }
       if(!out) throw new Error('No answer came back.');
-      done(out);
     }
   }catch(e){
     const w = el.querySelector('.work .orb'); if(w) w.classList.remove('busy');
+    if(doneShown){ busy = false; sendState(false); $('#orb').classList.remove('busy'); return; }    // only the suggestions were cut short
     if(ctl && ctl.signal.aborted){
       // stopped: what was written so far stays, marked as stopped
       const d = el.querySelector('.draft'), part = d && !d.hidden ? d.innerHTML.replace('<div class="dlabel">Writing…</div>', '') : '';
@@ -758,8 +811,8 @@ document.querySelectorAll('.tries button').forEach(b=>b.onclick = () => ask(b.da
 const openPanel = on => { $('#panel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadLearned(); };
 $('#openLearned').onclick = () => openPanel(true);
 $('#closeLearned').onclick = () => openPanel(false);
-$('#scrim').onclick = () => { openPanel(false); openConn(false); openChats(false); };
-document.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ openPanel(false); openConn(false); openChats(false); } });
+$('#scrim').onclick = () => { openPanel(false); openConn(false); openChats(false); openTasks(false); };
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ openPanel(false); openConn(false); openChats(false); openTasks(false); } });
 $('#clear').onclick = () => newChat();
 /* ---------------------------------------------------------------- files you attach: read here, in this browser
    (text as it is; a PDF's text with Mozilla's pdf.js), then sent with the question as numbered sources */
@@ -898,6 +951,7 @@ const COMMANDS = [
   {c: '/file', a: '', d: 'Attach a file (PDF, text, CSV, code)'},
   {c: '/cloud', a: 'on | off', d: 'Let a bigger cloud model write the hard answers'},
   {c: '/theme', a: 'auto | light | dark', d: 'Change the look'},
+  {c: '/schedule', a: '', d: 'Scheduled tasks — a question asked for you every day at a time'},
   {c: '/chats', a: '', d: 'Your past chats — open one to carry on (also /resume)'},
   {c: '/new', a: '', d: 'Start a new chat (the last one stays in Chats)'},
   {c: '/help', a: '', d: 'Show all commands'},
@@ -938,6 +992,7 @@ async function runCommand(line){
   else if(c === '/theme'){ const t = /^(light|dark)$/i.test(arg) ? arg.toLowerCase() : 'auto'; store.set('ai.theme', t); applyTheme(t); toast('Theme: ' + t); }
   else if(c === '/new') newChat();
   else if(c === '/chats' || c === '/resume') openChats(true);
+  else if(c === '/schedule') openTasks(true);
   else if(c === '/help'){ const el = turnEl('/help'); finish(el, '/help', {text: COMMANDS.map(x=>'- `' + x.c + (x.a ? ' ' + x.a : '') + '` — ' + x.d).join('\n'), model: 'Commands', by: 'Type / in the box to see these'}, []); }
   else { toast('No such command — type / to see them'); return true; }
   return true;
@@ -997,7 +1052,7 @@ function drawChats(){
   for(const c of list){
     const g = dayGroup(c.updated);
     if(g !== last){ html += `<h6>${g}</h6>`; last = g; }
-    html += `<div class="chat${c.id === sessionId ? ' cur' : ''}" data-id="${esc(c.id)}" title="${esc(c.title || '')}${c.source === 'terminal' ? ' (from the terminal)' : ''}"><span class="ct">${esc(c.title || 'Untitled')}</span>${c.source === 'terminal' ? '<span class="src" title="From the terminal">⌘</span>' : ''}<button class="del" type="button" aria-label="Delete this chat" data-del="${esc(c.id)}">×</button></div>`;
+    html += `<div class="chat${c.id === sessionId ? ' cur' : ''}" data-id="${esc(c.id)}" title="${esc(c.title || '')}${c.source === 'terminal' ? ' (from the terminal)' : ''}"><span class="ct">${esc(c.title || 'Untitled')}</span>${c.source === 'terminal' ? '<span class="src" title="From the terminal">⌘</span>' : c.source === 'task' ? '<span class="src" title="A scheduled task">⏰</span>' : ''}<button class="del" type="button" aria-label="Delete this chat" data-del="${esc(c.id)}">×</button></div>`;
   }
   box.innerHTML = html;
   box.querySelectorAll('.chat').forEach(el=>el.onclick = e => { if(e.target.closest('.del')) return; openChat(el.dataset.id); });
@@ -1010,7 +1065,21 @@ function drawChats(){
   });
 }
 async function loadChats(){ chatCache = await listChats(); drawChats(); }
-$('#chatSearch').oninput = drawChats;
+// searching: titles at once, then inside every question and answer (on the Mac, the terminal's chats too)
+let searchT = null;
+async function searchChats(){
+  const f = ($('#chatSearch').value || '').trim();
+  drawChats();
+  if(f.length < 2) return;
+  let hits = [];
+  if(mode === 'mac'){ try{ hits = (await fetch(HELPER + '/sessions?q=' + encodeURIComponent(f)).then(r=>r.json())).hits || []; }catch(e){} }
+  else { const words = f.toLowerCase().split(/\s+/); Object.values(localChats()).forEach(c=>(c.turns || []).forEach((t, i)=>{ const a = String((t.answer || {}).text || ''); if(words.every(w=>(t.q + ' ' + a).toLowerCase().includes(w))){ const at = Math.max(0, a.toLowerCase().indexOf(words[0]) - 60); hits.push({id: c.id, title: c.title, updated: c.updated, q: t.q, snippet: a.slice(at, at + 200)}); } })); }
+  if(($('#chatSearch').value || '').trim() !== f || !hits.length) return;
+  const box = $('#chats');
+  box.insertAdjacentHTML('beforeend', `<h6>Inside your chats</h6>` + hits.slice(0, 20).map(h=>`<div class="chat hit" data-id="${esc(h.id)}" title="${esc(h.title)}"><span class="ct"><b>${esc(h.q)}</b><small>${esc(h.snippet)}</small></span></div>`).join(''));
+  box.querySelectorAll('.chat.hit').forEach(el=>el.onclick = () => openChat(el.dataset.id));
+}
+$('#chatSearch').oninput = () => { clearTimeout(searchT); searchT = setTimeout(searchChats, 250); };
 function newChat(quiet){
   sessionId = newId(); store.set('ai.session', sessionId);
   history = []; store.set('moneyai.history', []); goal = ''; store.set('ai.goal', ''); showGoal();
@@ -1025,6 +1094,24 @@ $('#sbOpen').onclick = () => openChats(true);
 $('#sbClose').onclick = () => openChats(false);
 $('#newChat').onclick = () => newChat();
 
+/* ---------------------------------------------------------------- scheduled tasks (run by the helper on the Mac) */
+const DAYS_TXT = d => { const k = JSON.stringify(d); return k === '[0,1,2,3,4,5,6]' ? 'Every day' : k === '[1,2,3,4,5]' ? 'Weekdays' : k === '[0,6]' ? 'Weekends' : d.map(x=>['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][x]).join(', '); };
+async function loadTasks(){
+  const box = $('#tasks');
+  if(mode !== 'mac'){ box.innerHTML = '<p class="sub" style="margin-top:12px">Scheduled tasks run on your Mac. Open this page on the Mac (with the helper running) to add them; their results reach every device through your chats.</p>'; return; }
+  let list = []; try{ list = (await fetch(HELPER + '/tasks').then(r=>r.json())).list || []; }catch(e){}
+  box.innerHTML = (list.length ? list.map(t=>`<div class="trow2"><input type="checkbox" data-on="${esc(t.id)}" ${t.on !== false ? 'checked' : ''} aria-label="On"><span class="tt"><b>${esc(t.prompt)}</b><small>${esc(t.time)} · ${esc(DAYS_TXT(t.days))}${t.cloud ? ' · cloud AI' : ''}${t.last ? ' · last run ' + esc(t.last) : ''}</small></span><span class="acts"><button class="ghost" type="button" data-run="${esc(t.id)}">Run now</button><button class="ghost" type="button" data-del="${esc(t.id)}">Delete</button></span></div>`).join('') : '<p class="sub" style="margin-top:12px">Nothing scheduled yet.</p>') +
+    `<h3>Add a task</h3><form class="cform" id="tform"><input id="tp" placeholder="What to ask, e.g. Nifty 50 technical summary with key levels" required maxlength="1000"><div class="two"><input id="tt" type="time" value="09:00" required><select id="td"><option value="daily">Every day</option><option value="weekdays">Weekdays</option><option value="weekends">Weekends</option></select></div><label class="tog" style="margin:0"><input type="checkbox" id="tc"><span>Use the cloud AI (faster for analysis)</span></label><button class="btn">Schedule it</button></form>`;
+  const upd = async (t, ch) => { await post('/task', Object.assign({}, t, ch)); loadTasks(); };
+  box.querySelectorAll('[data-on]').forEach(i=>i.onchange = () => upd(list.find(t=>t.id === i.dataset.on), {on: i.checked}));
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick = async () => { await post('/task', {id: b.dataset.del, delete: true}); loadTasks(); toast('Task deleted'); });
+  box.querySelectorAll('[data-run]').forEach(b=>b.onclick = async () => { await post('/task', {id: b.dataset.run, run: true}); toast('Running — the result will appear in its ⏰ chat'); setTimeout(loadChats, 60000); });
+  $('#tform').onsubmit = async e => { e.preventDefault(); const r = await post('/task', {prompt: $('#tp').value, time: $('#tt').value, days: $('#td').value, cloud: $('#tc').checked}).catch(()=>null); toast(r && r.id ? 'Scheduled' : 'Could not schedule that'); loadTasks(); };
+}
+const openTasks = on => { $('#taskPanel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on){ openChats(false); loadTasks(); } };
+$('#openTasks').onclick = () => openTasks(true);
+$('#closeTasks').onclick = () => openTasks(false);
+
 /* ---------------------------------------------------------------- connectors: what it may use */
 const BUILTIN = [
   {k: 'web', n: 'Web search', d: 'Your search engine on the Mac; your relay elsewhere'},
@@ -1032,6 +1119,7 @@ const BUILTIN = [
   {k: 'calc', n: 'Calculator', d: 'Sums, dates, EMI, compound interest — worked out exactly'},
   {k: 'market', n: 'Market prices', d: 'Real prices and technical analysis (indices, shares, crypto, gold)'},
   {k: 'code', n: 'Running code', d: 'Tests the code it writes, in a sandbox (on the Mac)'},
+  {k: 'apps', n: 'Your apps', d: 'Expense Tracker, 16-Year Ledger and Trip Vault, as Money Home last saw them in this browser — exact answers, no AI needed for the common ones'},
   {k: 'connectors', n: 'Data connectors', d: 'The sources below'},
 ];
 let disabled = store.get('ai.off', []);

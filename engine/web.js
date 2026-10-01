@@ -459,6 +459,20 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     return /\b(today|now|latest|newest|current|currently|this (week|month|year)|recent|recently|most recent|last|news|live|price|prices|rate|rates|score|scores|update|updates|won|win|wins|winner|winners|champion|champions|who is|who's|ceo|president|prime minister|chief minister|governor|minister|captain|coach|version|release|released|record|records|ranking|rankings|population|how many moons|stock|stocks|share price|shares|market|markets|nifty|sensex|index|bitcoin|crypto|technical analysis|bullish|bearish|fall more|rise more|number of moons|(largest|highest|biggest|greatest) number of|most (moons|medals|goals|runs|wickets|titles|trophies|followers|subscribers|populous|valuable|expensive)|richest|tallest building|fastest-growing|how many (members|countries|states|people)|days (left|until|till|to))\b/i.test(q);
   }
 
+  /* How far a source can be trusted, from its address: official (governments, regulators, exchanges, the body
+     itself), reference (encyclopedias, research, market data), news (established outlets), other (blogs, forums…). */
+  const TRUST_RE = {
+    official: /(^|\.)(gov|gov\.in|nic\.in|gov\.uk|gov\.au|gc\.ca|mil|edu|ac\.in|ac\.uk|europa\.eu|who\.int|un\.org|worldbank\.org|imf\.org|oecd\.org|rbi\.org\.in|sebi\.gov\.in|nseindia\.com|bseindia\.com|amfiindia\.com|isro\.gov\.in|nasa\.gov|esa\.int|nobelprize\.org|olympics\.com|fifa\.com|uefa\.com|wimbledon\.com|icc-cricket\.com|bcci\.tv|iplt20\.com|apple\.com|android\.com|developer\.android\.com|python\.org|nodejs\.org|w3\.org|ietf\.org|imd\.gov\.in|incometax\.gov\.in|npci\.org\.in)$/,
+    reference: /(^|\.)(wikipedia\.org|wiktionary\.org|britannica\.com|investopedia\.com|finance\.yahoo\.com|arxiv\.org|openalex\.org|nature\.com|science\.org|sciencedirect\.com|ncbi\.nlm\.nih\.gov|nih\.gov|mayoclinic\.org|webmd\.com|stackoverflow\.com|developer\.mozilla\.org|docs\.python\.org|github\.com|worldometers\.info|statista\.com|tradingeconomics\.com|moneycontrol\.com|valueresearchonline\.com|morningstar\.(com|in)|espncricinfo\.com|timeanddate\.com|drikpanchang\.com)$/,
+    news: /(^|\.)(reuters\.com|apnews\.com|bbc\.(com|co\.uk)|theguardian\.com|nytimes\.com|washingtonpost\.com|wsj\.com|ft\.com|bloomberg\.com|cnbc\.com|cnn\.com|aljazeera\.com|economist\.com|economictimes\.indiatimes\.com|timesofindia\.indiatimes\.com|indiatimes\.com|livemint\.com|business-standard\.com|thehindu\.com|thehindubusinessline\.com|hindustantimes\.com|indianexpress\.com|ndtv\.com|ndtvprofit\.com|news18\.com|firstpost\.com|cnbctv18\.com|moneycontrol\.com|financialexpress\.com|deccanherald\.com|scroll\.in|theprint\.in|thewire\.in|zeebiz\.com|espn\.(com|in)|skysports\.com|techcrunch\.com|theverge\.com|arstechnica\.com|wired\.com|macrumors\.com|9to5mac\.com|9to5google\.com|androidauthority\.com|gsmarena\.com|abcnews\.(go\.)?com|npr\.org|cbsnews\.com|nbcnews\.com|usatoday\.com|forbes\.com|fortune\.com|businessinsider\.com|yahoo\.com)$/,
+  };
+  function trustOf(url){
+    let h = ''; try{ h = new URL(url).hostname.toLowerCase().replace(/^www\.|^m\./, ''); }catch(e){ return 'other'; }
+    for(const k of ['official', 'reference', 'news']) if(TRUST_RE[k].test(h)) return k;
+    return 'other';
+  }
+  const TRUST_RANK = {official: 3, reference: 2, news: 2, other: 0};
+
   /* ================================================================ REVIEW: rules every answer is held to
      review(answer, {question, sources:[{n, title, text}], extra (calculator results, files), searched, timely})
        -> [{rule, text}] — what breaks the rules. Used after every draft: the model gets these back and must fix them
@@ -475,6 +489,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     R9: 'Answer once: no "Final answer" section, no repeating',
     R10: 'Something dated after today has not happened yet',
     R11: 'Something dated before today has already happened',
+    R12: 'Every claim must be backed by what was read',
   };
   // dates written in a sentence ("5 to 7 October 2026", "October 5, 2026", "2026-10-05") -> [Date]
   const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -693,7 +708,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, review, isTimely, saveGood, findGood, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, trustOf, TRUST_RANK, isTimely, saveGood, findGood, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;

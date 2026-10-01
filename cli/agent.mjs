@@ -17,6 +17,8 @@ const TOOLS = [
     parameters: {type: 'object', properties: {market: {type: 'string', description: 'What to analyse, as the user says it: "Nifty 50", "Indian stock market", "Sensex", "Reliance", "HDFC Bank", "bitcoin", "gold"'}, timeframe: {type: 'string', enum: ['day', 'week', 'hour'], description: 'Candle size: day (default), week or hour'}}, required: ['market']}}},
   {type: 'function', function: {name: 'run_code', description: 'Run a complete program and get its output or error, to test code you wrote (in a sandbox: no internet, no files outside its own folder, 20 s limit). Languages: python, javascript, c, cpp. Print results so you can see them.',
     parameters: {type: 'object', properties: {language: {type: 'string', enum: ['python', 'javascript', 'c', 'cpp', 'java']}, code: {type: 'string', description: 'The whole program'}, stdin: {type: 'string', description: 'Input to feed it (optional)'}}, required: ['language', 'code']}}},
+  {type: 'function', function: {name: 'search_chats', description: 'Search the user\'s past conversations with you (questions and your answers), for "what did you tell me about…", "last time we discussed…", "my earlier question about…".',
+    parameters: {type: 'object', properties: {query: {type: 'string', description: 'A few words to look for'}}, required: ['query']}}},
   {type: 'function', function: {name: 'read_file', description: 'Read a text file on this computer that the user mentioned.',
     parameters: {type: 'object', properties: {path: {type: 'string'}}, required: ['path']}}},
 ];
@@ -31,6 +33,7 @@ Work like a careful researcher:
 - Format answers in Markdown: start with the answer itself (not "The page confirms…" or "Based on my search…"), then short paragraphs, "- " lists for steps or points, **bold** for the key figure.
 - For markets and shares (an index, a stock, crypto, gold, a currency) — prices, trend, technical analysis, "will it fall or rise", "what do you think" — call market_analysis: it fetches real prices and works out the indicators. Never say you have no market data. Then web_search for the news behind the move. Answer with the trend, the key levels (support, resistance, averages), what the indicators lean to and what would confirm or cancel a further fall or rise. It is analysis, not a promise: no one knows the future, and do not tell the user to buy or sell.
 - Sources disagree sometimes: say so, and prefer the newest and most official.
+- Leave out sources that turned out to be unrelated — do not mention or explain them; answer only what was asked.
 - When you have enough, write the answer once: clear plain sentences, every fact from a source marked with its number like [3]. Copy numbers and names exactly as the source gives them. Say what you could not find. No separate "Final answer" section, no repeating yourself.
 Do not invent sources or numbers.`;
 // the rules every answer is held to, your own rules (~/.money-ai/rules.md) and the mistakes it made before
@@ -93,6 +96,32 @@ function tableSummary(text, sep){
     }
   }
   return 'TABLE SUMMARY (worked out exactly — use these figures, do not add up yourself): ' + body.length + ' rows × ' + head.length + ' columns\n' + cols.join('\n') + (groups.length ? '\nTotals:\n- ' + groups.join('\n- ') : '');
+}
+/* CLAIMS: the sentences that state facts (a figure, a date, a name) — each matched to the passages it could rest on,
+   and its figures looked for there. A first confidence comes from that, from how many sites agree and their trust,
+   and from the rules check; a second model's opinion (verifyClaims in ai.mjs) can then adjust it. */
+function checkClaims(text, sources, issues, timely, o){
+  const read = sources.filter(s=>/^https?:|^file:|^chat:/.test(s.url) && String(s.text).trim().length > 40);
+  const prose = String(text).replace(/```[\s\S]*?```/g, ' ').replace(/^⚠.*$|^✔.*$/gm, ' ').replace(/^\s*\|.*$/gm, ' ');
+  const sents = (prose.match(/(?:[^.!?\n]|\.(?=\d))+[.!?]?/g) || []).map(x=>x.trim()).filter(x=>x.length > 25 && /\d|\b[A-Z][a-z]{2,}\s+[A-Z][a-z]{2,}/.test(x.replace(/\[\d+\]/g, '')));
+  if(!sents.length) return null;
+  const nums = t => (String(t).replace(/\[\d+\]/g, '').match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x=>x.replace(/,/g, '')).filter(x=>x.length >= 2);
+  const claims = sents.sort((a, b)=>(/\[\d+\]/.test(b) - /\[\d+\]/.test(a))).slice(0, 6).map(claim=>{
+    const cites = (claim.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1));
+    const pool = read.filter(s=>!cites.length || cites.includes(s.n));
+    const evidence = (pool.length ? pool : read).map(s=>o.pick ? o.pick(claim.replace(/\[\d+\]/g, ''), s.text, 3) : String(s.text).slice(0, 600)).join(' … ').slice(0, 1600);
+    const all = (pool.length ? pool : read).map(s=>s.text).join(' ').replace(/,/g, '');
+    const want = nums(claim), missing = want.filter(n=>!all.includes(n));
+    return {claim: claim.slice(0, 300), evidence, ok: !missing.length, missing};
+  });
+  const domains = new Set(read.map(s=>{ try{ return new URL(s.url).hostname.replace(/^www\./, ''); }catch(e){ return s.url; } }));
+  const trusted = read.filter(s=>o.trustRank && o.trustRank(s.url) >= 2).length;
+  const ok = claims.filter(c=>c.ok).length, serious = (issues || []).some(i=>/R3|R4|R5|R7|R10|R11/.test(i.rule));
+  let confidence = 'Medium';
+  if(!read.length && timely) confidence = 'Low';
+  else if(ok === claims.length && !serious && (domains.size >= 2 || trusted >= 1)) confidence = 'High';
+  else if(claims.length - ok >= 2 || serious) confidence = 'Low';
+  return {confidence, checked: claims.length, ok, domains: domains.size, trusted, claims};
 }
 export async function runAgent(question, o){
   const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
@@ -190,6 +219,16 @@ export async function runAgent(question, o){
       trace('run', 'Ran ' + (r.language || args.language) + ' — ' + (r.ok ? 'worked' : r.exit === 'timeout' ? 'too slow (stopped)' : 'failed'), {lang: r.language || args.language, code: String(args.code || '').slice(0, 6000), output: r.output, ok: r.ok});
       return (r.ok ? 'It ran (exit 0' : 'It failed (exit ' + r.exit) + (r.ms ? ', ' + r.ms + ' ms' : '') + '). Output:\n' + r.output;
     }
+    if(name === 'search_chats'){
+      if(!o.searchChats) return 'Past chats are not available here.';
+      step('🔎 Searching your past chats: ' + String(args.query || '').slice(0, 50));
+      const hits = o.searchChats(String(args.query || question), 6);
+      if(!hits.length) return 'Nothing in your past chats matches "' + args.query + '".';
+      const text = hits.map(h=>`${String(h.updated).slice(0, 10)} — "${h.q}"\n${h.snippet}`).join('\n\n');
+      const n = numberOf('chat://' + hits[0].id, 'Your past chats', text);
+      trace('search', 'Searched your past chats: ' + args.query, {results: hits.map(h=>({title: h.q, url: '', date: String(h.updated).slice(0, 10)}))});
+      return `[${n}] Your past chats\n${text}`;
+    }
     if(name === 'use_connector'){
       const c = (o.connectors || []).find(x=>x.name === args.connector && x.on !== false);
       if(!c || !o.callConnector) return 'No such connector.';
@@ -228,7 +267,9 @@ export async function runAgent(question, o){
   if(o.prefetch !== false && !(o.files && o.files.length) && !(o.attachments && o.attachments.length)){
     const off = new Set(o.disabled || []);
     const marketQ = o.market && !off.has('market') && /\b(stock|stocks|share|shares|market|markets|nifty|sensex|bank nifty|bitcoin|btc|ethereum|crypto|gold price|silver price|crude|index|forex|technical analysis)\b/i.test(question);
-    if(marketQ){
+    if(o.searchChats && /\b(you (told|said|suggested|gave|recommended)|did you (tell|say)|we (discussed|talked)|last time|earlier (chat|conversation|question)|previous (chat|conversation)|my (earlier|previous|last) (question|chat))\b/i.test(question)){
+      await asTool('search_chats', {query: question.replace(/\b(what|did|you|tell|told|me|about|said|we|discuss|discussed|talked|last|time|earlier|previous|chat|conversation|question|my|the|a|an|in|on|week|month|yesterday)\b/gi, ' ').replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim() || question});
+    } else if(marketQ){
       step('📈 Getting real prices first');
       await asTool('market_analysis', {market: question, timeframe: /\bweek/i.test(question) ? 'week' : /\bhour/i.test(question) ? 'hour' : 'day'});
       const newsQ = await asTool('web_search', {query: question.replace(/\b(can you|please|do|technical analysis|what you feel|will it|see if)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + ' news today'});
@@ -236,7 +277,10 @@ export async function runAgent(question, o){
     } else if((timely || forceCloud) && !codeQ && o.search && !off.has('web')){
       step('Researching before thinking');
       await asTool('web_search', {query: question});
-      const pick = lastResults.filter(x=>x.url && !/youtube\.com|youtu\.be|facebook\.com|instagram\.com|x\.com|twitter\.com|tiktok\.com|\.pdf$/i.test(x.url)).slice(0, 2);
+      // the two to read: the most trusted of the top six (official, then reference and news), relevance breaking ties
+      const rank = x => (o.trustRank ? o.trustRank(x.url) : 0);
+      const pick = lastResults.filter(x=>x.url && !/youtube\.com|youtu\.be|facebook\.com|instagram\.com|x\.com|twitter\.com|tiktok\.com|\.pdf$/i.test(x.url)).slice(0, 6)
+        .map((x, i)=>({x, sc: rank(x) * 2 - i * 0.5})).sort((a, b)=>b.sc - a.sc).slice(0, 2).map(y=>y.x);
       if(pick.length){
         const id = 'pre' + messages.length;
         messages.push({role: 'assistant', content: '', tool_calls: pick.map((x, i)=>({id: id + i, function: {name: 'open_page', arguments: {url: x.url}}}))});
@@ -268,20 +312,20 @@ export async function runAgent(question, o){
     }
     let text = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     // a small model sometimes writes the call instead of making it: web_search("…"), {"name": "calculate", …}
-    const written = /^\W*(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
-      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
+    const written = /^\W*(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector|search_chats)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
+      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector|search_chats)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
       (()=>{
         // {"name": "run_code", "arguments": {...}} — often in a ```json block, sometimes missing its last brace
         const at = text.indexOf('{'); if(at < 0 || !/"name"\s*:/.test(text)) return null;
         let body = text.slice(at).replace(/```[\s\S]*$/, '').trim(), j = null;
         body = body.replace(/\\'/g, "'");                             // \' is not JSON, but models write it
         for(let k = 0; k < 3 && !j; k++){ try{ j = JSON.parse(body); }catch(e){ body += '}'; } }
-        if(!j || !/^(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector)$/.test(j.name || '')) return null;
+        if(!j || !/^(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector|search_chats)$/.test(j.name || '')) return null;
         const a = j.arguments || j.parameters || {};
         return [null, j.name, a.query || a.url || a.expression || a.path || a.market || a.code || a.connector || 'x', typeof a === 'object' ? a : null];
       })();
     if(written && written[2] && turn < 9){
-      const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path', market_analysis: 'market', run_code: 'code', use_connector: 'query'}[name];
+      const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path', market_analysis: 'market', run_code: 'code', use_connector: 'query', search_chats: 'query'}[name];
       const args = written[3] || {[key]: arg};                       // the whole set of arguments when it wrote them out
       messages.push({role: 'assistant', content: '', tool_calls: [{function: {name, arguments: args}}]});
       let result;
@@ -416,7 +460,9 @@ export async function runAgent(question, o){
     text = text.replace(/\s*\[(\d+)\]/g, (m, n)=>sources.some(s=>s.n === +n) ? m : '');
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
     if(cloudBy) step('Written by ' + cloudBy);
-    return {text, chart: lastChart, read: sources.filter(s=>!cited.has(s.n) && /^https?:/.test(s.url)).slice(0, 8).map(s=>({i: s.n, title: s.title, url: s.url})), model: cloudBy ? cloudBy + ' (cloud), research on this Mac' : (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
+    const trust = checkClaims(text, sources, issuesLeft, timely, o);
+    if(trust) trace('check', 'Claims checked: ' + trust.ok + ' of ' + trust.checked + ' have their figures in what was read · confidence ' + trust.confidence, trust.claims.map(c=>(c.ok ? '✓ ' : '? ') + c.claim).join('\n'));
+    return {text, trust, chart: lastChart, read: sources.filter(s=>!cited.has(s.n) && /^https?:/.test(s.url)).slice(0, 8).map(s=>({i: s.n, title: s.title, url: s.url})), model: cloudBy ? cloudBy + ' (cloud), research on this Mac' : (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url, trust: o.trustOf ? o.trustOf(s.url) : undefined})),
       by: (cloudBy ? cloudBy + ' (cloud), researched' : (r.model || 'local model')) + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
         (runs ? ' · code run ' + runs + '×' + (lastRun ? (lastRun.ok ? ', last run worked' : ', last run failed') : '') : '') +
         (o.review ? ' · rules: ' + (firstIssues && firstIssues.length ? firstIssues.length + ' caught, ' + Math.max(0, firstIssues.length - issuesLeft.length) + ' fixed' : 'all kept') : ''),
