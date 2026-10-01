@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Money AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+:root{
+  --page:#eef1ec; --card:#ffffff; --card2:#f6f8f5; --ink:#132019; --ink2:#3b4a42; --mut:#6b7a72; --line:#dfe5df;
+  --hero:#0c2620; --hero2:#12372e; --hero-ink:#f3f1e8; --hero-mut:#a9bcb2; --gold:#e2b04a; --gold-soft:#f6e7c1;
+  --up:#16804a; --dn:#c2412d; --warn-bg:#fbf1dc; --warn-ink:#7a5410;
+  --shadow:0 1px 2px rgb(15 30 25 / .05), 0 8px 24px -12px rgb(15 30 25 / .14);
+  --display:'Bricolage Grotesque', 'Avenir Next', system-ui, sans-serif;
+  --body:'Plus Jakarta Sans', -apple-system, 'Segoe UI', sans-serif;
+  --mono:'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --page:#0b110f; --card:#131b18; --card2:#18221e; --ink:#e7ede9; --ink2:#c1cdc6; --mut:#8d9c94; --line:#24302b;
+  --hero:#0a1f1a; --hero2:#0f2d25; --up:#4cc38a; --dn:#ef7a66; --warn-bg:#2a2213; --warn-ink:#f0c776; --shadow:none; } }
+:root[data-theme="dark"]{ --page:#0b110f; --card:#131b18; --card2:#18221e; --ink:#e7ede9; --ink2:#c1cdc6; --mut:#8d9c94; --line:#24302b;
+  --hero:#0a1f1a; --hero2:#0f2d25; --up:#4cc38a; --dn:#ef7a66; --warn-bg:#2a2213; --warn-ink:#f0c776; --shadow:none; }
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page); color:var(--ink); font:16px/1.6 var(--body); min-height:100vh; display:flex; flex-direction:column}
+button,textarea,input{font:inherit; color:inherit}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--gold); outline-offset:2px}
+
+/* the band at the top: what this is, and whether its parts are running */
+header{background:linear-gradient(160deg,var(--hero),var(--hero2)); color:var(--hero-ink)}
+.bar{max-width:780px; margin:0 auto; padding:14px 16px; display:flex; align-items:center; gap:12px}
+.mark{font:800 21px/1 var(--display); letter-spacing:-.02em}
+.mark small{font:500 13px var(--body); color:var(--hero-mut); margin-left:8px; letter-spacing:0}
+.status{margin-left:auto; display:flex; gap:14px; font-size:13px; color:var(--hero-mut)}
+.status span::before{content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--mut); margin-right:6px; vertical-align:1px}
+.status .on::before{background:#4cc38a} .status .off::before{background:var(--dn)}
+.learnedBtn{background:none; border:1px solid rgb(255 255 255 / .22); color:var(--hero-ink); border-radius:999px; padding:5px 12px; font-size:13px; cursor:pointer}
+.learnedBtn:hover{border-color:var(--gold)}
+
+main{flex:1; width:100%; max-width:780px; margin:0 auto; padding:24px 16px 160px}
+
+/* empty: the first thing you see */
+.hello{padding:8vh 0 0}
+.hello h1{font:800 clamp(38px,7vw,60px)/1.02 var(--display); letter-spacing:-.035em; margin:0 0 14px}
+.hello p{color:var(--ink2); max-width:56ch; margin:0 0 26px}
+.tries{display:flex; flex-wrap:wrap; gap:8px}
+.tries button{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:9px 14px; cursor:pointer; text-align:left; box-shadow:var(--shadow); font-size:14.5px}
+.tries button:hover{border-color:var(--gold)}
+
+/* a question and its answer */
+.turn{margin:0 0 34px}
+.q{font:600 21px/1.3 var(--display); letter-spacing:-.015em; margin:0 0 12px}
+.trail{list-style:none; margin:0 0 12px; padding:0 0 0 14px; border-left:2px solid var(--gold); font-size:13.5px; color:var(--mut)}
+.trail li{padding:2px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.trail li.now{color:var(--ink2)}
+.trail li.now::after{content:'…'; animation:blink 1.2s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+details.done summary{cursor:pointer; color:var(--mut); font-size:13.5px; margin:0 0 10px; list-style:none}
+details.done summary::-webkit-details-marker{display:none}
+details.done summary::before{content:'▸ '} details.done[open] summary::before{content:'▾ '}
+.a{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px 20px; box-shadow:var(--shadow)}
+.a p{margin:0 0 10px} .a p:last-child{margin:0}
+.a sup a{font:500 11px var(--mono); text-decoration:none; background:var(--gold-soft); color:#5b4210; border-radius:5px; padding:1px 5px; margin-left:1px}
+.warn{background:var(--warn-bg); color:var(--warn-ink); border-radius:10px; padding:9px 12px; font-size:14px; margin:0 0 10px}
+.ok{color:var(--up); font-size:14px}
+.src{margin:14px 0 0; padding:12px 0 0; border-top:1px solid var(--line); font-size:13.5px; list-style:none}
+.src li{display:flex; gap:8px; padding:2px 0; min-width:0}
+.src b{font:500 12px var(--mono); color:var(--mut); flex:none; padding-top:2px}
+.src a{text-decoration:none; color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.src a:hover{text-decoration:underline}
+.foot{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; font-size:12.5px; color:var(--mut)}
+.foot .by{font-family:var(--mono); font-size:11.5px; flex:1 1 300px}
+.link{background:none; border:0; padding:0; color:var(--ink2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; font-size:13px}
+.teach{display:flex; gap:8px; margin-top:10px}
+.teach input{flex:1; min-width:0; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:8px 12px}
+.err{color:var(--dn)}
+
+/* the box you type in */
+.composer{position:fixed; left:0; right:0; bottom:0; background:linear-gradient(transparent, var(--page) 30%); padding:28px 16px 18px}
+.box{max-width:780px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; background:var(--card); border:1px solid var(--line); border-radius:18px; padding:10px 10px 10px 16px; box-shadow:var(--shadow)}
+.box:focus-within{border-color:var(--gold)}
+.box textarea{flex:1; border:0; outline:0; background:none; resize:none; max-height:180px; padding:6px 0; line-height:1.5}
+.btn{background:var(--hero); color:var(--hero-ink); border:0; border-radius:12px; padding:9px 18px; font-weight:600; cursor:pointer}
+.btn:hover{background:var(--hero2)} .btn:disabled{opacity:.5; cursor:default}
+.hint{max-width:780px; margin:8px auto 0; font-size:12px; color:var(--mut); display:flex; justify-content:space-between; gap:12px}
+
+/* what it has learned */
+.panel{position:fixed; inset:0 0 0 auto; width:min(440px,100%); background:var(--card); border-left:1px solid var(--line); box-shadow:-20px 0 40px -20px rgb(0 0 0 / .25); transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; z-index:5; padding:20px}
+.panel.open{transform:none}
+.panel h2{font:800 24px var(--display); letter-spacing:-.02em; margin:0 0 4px}
+.panel h3{font:600 15px var(--body); margin:22px 0 8px}
+.panel p.sub{color:var(--mut); font-size:13.5px; margin:0}
+.panel ol,.panel ul{margin:0; padding:0 0 0 20px; font-size:14px} .panel li{margin:0 0 6px}
+.lesson{list-style:none; margin:0 0 0 -20px !important; padding:10px 12px; border:1px solid var(--line); border-radius:12px}
+.lesson .who{font-size:12px; color:var(--mut)}
+.close{float:right}
+@media (prefers-reduced-motion: reduce){ .panel{transition:none} .trail li.now::after{animation:none} }
+@media (max-width:560px){ .status{display:none} .mark small{display:none} .hint span+span{display:none} }
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <div class="mark">Money AI<small>runs on this Mac</small></div>
+  <div class="status" id="status"><span id="stSearch">Search</span></div>
+  <button class="learnedBtn" id="openLearned">What it learned</button>
+</div></header>
+
+<main id="main">
+  <section class="hello" id="hello">
+    <h1>Ask anything.</h1>
+    <p>It searches the web with your own search engine, reads the pages, works out sums and dates exactly, and checks its answer against its rules before you see it.</p>
+    <div class="tries">
+      <button>What is the RBI repo rate right now?</button>
+      <button>When is Diwali in 2026, and how many days away is it?</button>
+      <button>EMI for a 50 lakh loan at 8.5% for 20 years</button>
+      <button>Who is the Prime Minister of the United Kingdom now?</button>
+    </div>
+  </section>
+  <div id="turns"></div>
+</main>
+
+<div class="composer">
+  <form class="box" id="form">
+    <textarea id="q" rows="1" placeholder="Ask a question" aria-label="Your question"></textarea>
+    <button class="btn" id="ask">Ask</button>
+  </form>
+  <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><span><button class="link" id="clear" type="button">Start over</button></span></div>
+</div>
+
+<aside class="panel" id="panel" aria-label="What it learned">
+  <button class="link close" id="closeLearned">Close</button>
+  <h2>What it learned</h2>
+  <p class="sub">Given to the model before every answer.</p>
+  <div id="learned"></div>
+</aside>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const store = {get(k, d){ try{ return JSON.parse(localStorage.getItem(k)) ?? d; }catch(e){ return d; } }, set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }};
+let history = store.get('moneyai.history', []);          // [{q, answer}] — this conversation
+let busy = false;
+
+/* an answer's text as paragraphs: [n] become links to its sources, ⚠ lines become notices */
+function render(out){
+  const urls = {}; (out.sources || []).forEach((s, i)=>{ urls[s.i || i + 1] = s.url; });
+  const blocks = String(out.text || '').split(/\n\s*\n|\n(?=⚠|✔)/).map(b=>b.trim()).filter(Boolean);
+  const html = blocks.map(b=>{
+    let h = esc(b).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/\n/g, '<br>')
+      .replace(/\s?\[(\d+)\]/g, (m, n)=>urls[n] && !/^file:/.test(urls[n]) ? `<sup><a href="${esc(urls[n])}" target="_blank" rel="noopener">${n}</a></sup>` : `<sup><a>${n}</a></sup>`);
+    if(/^⚠/.test(b)) return `<div class="warn">${h}</div>`;
+    if(/^✔/.test(b)) return `<p class="ok">${h}</p>`;
+    return `<p>${h}</p>`;
+  }).join('');
+  const src = (out.sources || []).length ? `<ol class="src">${out.sources.map((s, i)=>`<li><b>${s.i || i + 1}</b>${s.url && !/^file:/.test(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener" title="${esc(s.url)}">${esc(s.title || s.url)}</a>` : esc(s.title)}</li>`).join('')}</ol>` : '';
+  return html + src;
+}
+function turnEl(q){
+  const el = document.createElement('section');
+  el.className = 'turn';
+  el.innerHTML = `<h2 class="q">${esc(q)}</h2><ul class="trail"></ul><div class="slot"></div>`;
+  $('#turns').appendChild(el);
+  $('#hello').hidden = true;
+  return el;
+}
+function finish(el, q, out){
+  const steps = Array.from(el.querySelectorAll('.trail li')).map(li=>li.textContent.replace(/…$/, ''));
+  el.querySelector('.trail').outerHTML = steps.length ? `<details class="done"><summary>How it got here (${steps.length} step${steps.length === 1 ? '' : 's'}${out.secs ? ', ' + out.secs + ' s' : ''})</summary><ul class="trail">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></details>` : '';
+  el.querySelector('.slot').innerHTML = `<div class="a">${render(out)}
+    <div class="foot"><span class="by">${esc(out.by || '')}</span><button class="link" type="button">Wrong? Teach it</button></div></div>`;
+  el.querySelector('.foot .link').onclick = () => teachBox(el, q);
+}
+function teachBox(el, q){
+  if(el.querySelector('.teach')) return el.querySelector('.teach input').focus();
+  const f = document.createElement('form');
+  f.className = 'teach';
+  f.innerHTML = `<input placeholder="What is right? e.g. The October meeting is on 5–7 October; it has not happened yet" aria-label="What is right"><button class="btn">Teach</button>`;
+  el.querySelector('.a').appendChild(f);
+  f.querySelector('input').focus();
+  f.onsubmit = async e => {
+    e.preventDefault();
+    const lesson = f.querySelector('input').value.trim();
+    if(lesson.length < 8) return;
+    const r = await fetch('/teach', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, lesson})}).then(r=>r.json()).catch(()=>({}));
+    f.outerHTML = r.ok ? '<p class="ok">Learned. Questions like this one will start with your lesson.</p>' : '<p class="err">Could not save that.</p>';
+  };
+}
+
+async function ask(q){
+  q = q.trim();
+  if(!q || busy) return;
+  busy = true; $('#ask').disabled = true; $('#q').value = ''; grow();
+  const el = turnEl(q), trail = el.querySelector('.trail');
+  el.scrollIntoView({behavior: 'smooth', block: 'start'});
+  const step = t => { trail.querySelectorAll('.now').forEach(x=>x.classList.remove('now')); const li = document.createElement('li'); li.className = 'now'; li.textContent = t.replace(/…$/, ''); trail.appendChild(li); };
+  step('Starting');
+  const turns = history.slice(-3).flatMap(h=>[{role: 'user', content: h.q}, {role: 'assistant', content: String(h.answer.text || '').slice(0, 1500)}]);
+  try{
+    const r = await fetch('/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns})});
+    if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'It answered ' + r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = '', out = null;
+    for(;;){
+      const {value, done} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream: true});
+      let i;
+      while((i = buf.indexOf('\n')) >= 0){
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if(!line.trim()) continue;
+        const m = JSON.parse(line);
+        if(m.step) step(m.step);
+        if(m.error) throw new Error(m.error);
+        if(m.answer) out = m.answer;
+      }
+    }
+    if(!out) throw new Error('No answer came back.');
+    trail.querySelector('li:first-child').remove();
+    finish(el, q, out);
+    history.push({q, answer: {text: out.text, sources: out.sources, by: out.by, secs: out.secs}});
+    history = history.slice(-20); store.set('moneyai.history', history);
+  }catch(e){
+    el.querySelector('.slot').innerHTML = `<p class="err">${esc(e.message)} — is the helper running? In Terminal: <code>launchctl kickstart -k gui/$(id -u)/com.moneyai.local</code></p>`;
+    trail.querySelectorAll('.now').forEach(x=>x.classList.remove('now'));
+  }
+  busy = false; $('#ask').disabled = false; $('#q').focus();
+}
+
+/* what it has learned */
+async function loadLearned(){
+  const d = await fetch('/learned').then(r=>r.json()).catch(()=>null);
+  if(!d){ $('#learned').innerHTML = '<p class="err">Could not load.</p>'; return; }
+  const cases = d.cases || [];
+  $('#openLearned').textContent = 'What it learned' + (cases.length ? ' (' + cases.length + ')' : '');
+  $('#learned').innerHTML =
+    `<h3>Lessons from particular questions</h3>` + (cases.length ? `<ul>${cases.map(c=>`<li class="lesson">${esc(c.lesson)}<div class="foot"><span class="who">${c.taught ? 'You taught this' : 'Caught by its own check'}${c.n > 1 ? ', ' + c.n + ' times' : ''}</span><button class="link" data-id="${esc(c.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">None yet. When its check catches a mistake, or you teach it, the lesson shows here.</p>') +
+    `<h3>Mistakes its check has caught</h3>` + ((d.mistakes || []).length ? `<ul>${d.mistakes.map(m=>`<li>${esc(m.text)} <span class="sub">(${m.n}×)</span></li>`).join('')}</ul>` : '<p class="sub">None yet.</p>') +
+    `<h3>Rules every answer is checked against</h3><ol>${Object.values(d.rules || {}).map(r=>`<li>${esc(r)}</li>`).join('')}</ol>` +
+    `<h3>Your own rules</h3>` + ((d.yours || []).length ? `<ul>${d.yours.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : '') + `<p class="sub">Add lines starting with “- ” to ${esc(d.rulesFile)}</p>`;
+  $('#learned').querySelectorAll('[data-id]').forEach(b=>b.onclick = async () => {
+    await fetch('/forget', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({id: b.dataset.id})});
+    loadLearned();
+  });
+}
+async function health(){
+  const d = await fetch('/health').then(r=>r.json()).catch(()=>null);
+  const s = $('#stSearch');
+  s.className = d && d.search && d.search.searxng ? 'on' : 'off';
+  s.textContent = d && d.search && d.search.searxng ? 'Search engine running' : 'Search engine off';
+}
+
+const grow = () => { const t = $('#q'); t.style.height = 'auto'; t.style.height = Math.min(180, t.scrollHeight) + 'px'; };
+$('#q').addEventListener('input', grow);
+$('#q').addEventListener('keydown', e=>{ if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); ask($('#q').value); } });
+$('#form').onsubmit = e => { e.preventDefault(); ask($('#q').value); };
+document.querySelectorAll('.tries button').forEach(b=>b.onclick = () => ask(b.textContent));
+$('#openLearned').onclick = () => { $('#panel').classList.add('open'); loadLearned(); };
+$('#closeLearned').onclick = () => $('#panel').classList.remove('open');
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape') $('#panel').classList.remove('open'); });
+$('#clear').onclick = () => { history = []; store.set('moneyai.history', []); $('#turns').innerHTML = ''; $('#hello').hidden = false; };
+// the conversation so far comes back after a reload
+history.forEach(h=>{ const el = turnEl(h.q); finish(el, h.q, h.answer); });
+health(); loadLearned(); $('#q').focus();
+</script>
+</body>
+</html>
