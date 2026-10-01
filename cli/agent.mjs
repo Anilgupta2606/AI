@@ -29,7 +29,6 @@ Do not invent sources or numbers.`;
 const RULEBOOK = o => (o.rules && o.rules.length ? '\nRules (your draft is checked against them and sent back if it breaks one):\n' + o.rules.map(r=>'- ' + r).join('\n') : '') +
   (o.userRules ? '\nThe user\'s own rules:\n' + o.userRules : '') +
   (o.mistakes && o.mistakes.length ? '\nMistakes you made before — do not repeat them:\n' + o.mistakes.map(m=>'- ' + m).join('\n') : '') +
-  (o.cases && o.cases.length ? '\nLessons from questions like this one before (follow them):\n' + o.cases.map(m=>'- ' + m).join('\n') : '') +
   (o.timing ? '\n' + o.timing : '');
 
 export async function runAgent(question, o){
@@ -37,9 +36,11 @@ export async function runAgent(question, o){
   const today = new Date().toISOString().slice(0, 10);
   const sources = [];                                             // everything read, numbered as the model sees it
   const numberOf = (url, title, text) => { let s = sources.find(x=>x.url === url); if(!s){ s = {n: sources.length + 1, url, title: title || url, text: ''}; sources.push(s); } if(text) s.text += ' ' + text; return s.n; };
-  const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o)}].concat(o.history || [], [{role: 'user', content: question}]);
+  // corrections from before go right with the question (a small model reads what is near the question best)
+  const lessons = o.cases && o.cases.length ? '\n\n(Corrections you were given before for questions like this — they override what you remember; still check with a search when the answer can change:\n' + o.cases.map(m=>'- ' + m).join('\n') + ')' : '';
+  const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o)}].concat(o.history || [], [{role: 'user', content: question + lessons}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
-  const timely = /\b(today|now|latest|current|currently|this (week|month|year)|recent|news|live|price|rate|score|update|who is|who won|when is|when was|how much|how many days|days (left|until|till|to))\b/i.test(question);
+  const timely = o.isTimely ? o.isTimely(question) : /\b(today|now|latest|current|recent|news|price|rate|score|who is|who won)\b/i.test(question);
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
   const run = async (name, args) => {
@@ -100,6 +101,18 @@ export async function runAgent(question, o){
       continue;
     }
     let text = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    // a small model sometimes writes the call instead of making it: web_search("…"), {"name": "calculate", …}
+    const written = /^\W*(web_search|open_page|calculate|read_file)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
+      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
+      (()=>{ try{ const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); const a = j.arguments || j.parameters || {}; return j.name && /^(web_search|open_page|calculate|read_file)$/.test(j.name) ? [null, j.name, a.query || a.url || a.expression || a.path || ''] : null; }catch(e){ return null; } })();
+    if(written && written[2] && turn < 9){
+      const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path'}[name];
+      messages.push({role: 'assistant', content: '', tool_calls: [{function: {name, arguments: {[key]: arg}}}]});
+      let result;
+      try{ result = await run(name, {[key]: arg}); }catch(e){ result = 'That did not work: ' + e.message; }
+      messages.push({role: 'tool', tool_name: name, content: result});
+      continue;
+    }
     if(!text && best) text = best.text;                            // out of steps mid-fix: the best draft so far stands
     // a question about now, answered from memory: look it up first (once)
     if(!searches && !nudged && timely && turn < 8){
@@ -108,7 +121,7 @@ export async function runAgent(question, o){
       continue;
     }
     // not an answer (a bare expression, a fragment): ask for a proper one
-    if((text.length < 25 || /^[\d\s()+\-−×*/.,a-z]{0,60}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
+    if((text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
       messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.'});
       continue;
     }
@@ -125,7 +138,7 @@ export async function runAgent(question, o){
     if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
     if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues, question); }
     // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
-    const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10/.test(i.rule) ? 3 : 1), 0);
+    const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10|R11/.test(i.rule) ? 3 : 1), 0);
     if(!best || weight(issues) < weight(best.issues)) best = {text, issues};
     // a day count is never left to the model: the calculator works it out for each date in the answer
     const dayFacts = best.issues.some(i=>i.rule === 'R6') && o.datesIn ? Array.from(new Set(o.datesIn(best.text).map(d=>d.toISOString().slice(0, 10)))).filter(d=>d > today).slice(0, 2).map(d=>o.calc('days from today to ' + d)).filter(Boolean) : [];
@@ -142,7 +155,7 @@ export async function runAgent(question, o){
     text = best.text;
     const issuesLeft = best.issues;
     // what is still wrong after fixing is shown, not hidden
-    const warn = issuesLeft.filter(i=>/R4|R5|R7|R8|R10/.test(i.rule)).map(i=>'⚠ ' + i.text);
+    const warn = issuesLeft.filter(i=>/R4|R5|R7|R8|R10|R11/.test(i.rule)).map(i=>'⚠ ' + i.text);
     if(issuesLeft.some(i=>i.rule === 'R6') && dayFacts.length) warn.push('✔ Checked with the calculator: ' + dayFacts.join(' '));
     if(warn.length) text += '\n\n' + warn.join('\n');
     // an answer built on something that cannot have happened yet: say so first, not in a footnote

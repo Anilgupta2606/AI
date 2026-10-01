@@ -56,3 +56,31 @@ test('cases: the same mistake again makes one lesson surer, not two lessons', ()
   W.remember([{rule: 'R10', text: '2026-10-05 is after today'}], 'Has the RBI cut the repo rate in its October 2026 policy meeting?');
   assert.strictEqual(n(), before);
 });
+test('what changes must be searched: winners, latest, office holders, counts that grow — not settled facts', ()=>{
+  const t = q => W.isTimely(q, '2026-10-01');
+  ['Which country won the 2026 FIFA World Cup?', 'Who won the most recent FIFA Club World Cup?', 'What is the latest version of iOS?',
+   'Which planet has the most moons?', 'Who is the CEO of OpenAI?', 'How many days until Diwali?'].forEach(q=>assert.ok(t(q), q));
+  ['Who painted the Mona Lisa?', 'What is the chemical symbol for gold?', 'Explain why the sky is blue', 'In which year did the Berlin Wall fall?'].forEach(q=>assert.ok(!t(q), q));
+});
+test('rules: a longer sum written out is worked out again', ()=>{
+  assert.deepStrictEqual(W.review('(100000 * (1 + 0.07)^5) = 131079.61', {sources: []}).map(i=>i.rule), ['R5']);
+  assert.deepStrictEqual(W.review('100000 * (1 + 0.07)^5 = 140255.17', {sources: []}), []);
+  assert.match(W.calc('What is 1,00,000 after 5 years at 7% interest compounded yearly?').text, /1,40,255/);
+});
+test('cases: lessons for different questions stay apart (a different year is a different question)', ()=>{
+  W.learnCase('Who won the most recent FIFA Club World Cup?', [{rule: 'you'}], {text: 'Chelsea won the 2025 Club World Cup.'});
+  W.learnCase('Which country won the 2026 FIFA World Cup?', [{rule: 'you'}], {text: 'Spain won the 2026 World Cup.'});
+  assert.deepStrictEqual(W.casesFor('Who won the most recent FIFA Club World Cup?', 3), ['Chelsea won the 2025 Club World Cup.']);
+  assert.deepStrictEqual(W.casesFor('Who won the 2026 FIFA World Cup?', 3), ['Spain won the 2026 World Cup.']);
+});
+test('rules: what is dated before today has already happened', ()=>{
+  const c = {sources: [{n: 3, title: 'x', text: 'Glasgow 2026, 23 July to 2 August 2026'}], today: '2026-10-01'};
+  assert.deepStrictEqual(W.review('The Games have not taken place yet; they are scheduled from 23 July to 2 August 2026 [3].', c).map(i=>i.rule), ['R11']);
+  assert.deepStrictEqual(W.review('The Games were held in Glasgow from 23 July to 2 August 2026 [3].', c), []);
+  assert.ok(W.isTimely('Which planet in our solar system has the largest number of moons?', '2026-10-01'));
+});
+test('rules: a capitalised word opening a sentence is not taken for a name', ()=>{
+  const c = {question: 'Which planet has the most moons?', sources: [{n: 1, title: 'NASA', text: 'Saturn has 274 moons.'}]};
+  assert.deepStrictEqual(W.review('Updated counts vary. Saturn has 274 moons [1].', c), []);
+  assert.deepStrictEqual(W.review('Saturn has 274 moons, more than Neptune [1].', c).map(i=>i.rule), ['R8']);
+});

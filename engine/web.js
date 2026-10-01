@@ -53,10 +53,10 @@ const MoneyWeb = (function(){
       return {kind: 'calculator', text: `From ${big(a)} to ${big(b)} in ${y} years is a CAGR of ${c.toFixed(2)}% a year.`, sources: []};
     }
     // lump sum: "5 lakh at 7% for 10 years", "what will 1 lakh become in 10 years at 12%"
-    if(/(\d+\.?\d*)\s*%/.test(q) && /(\d+)\s*(years?|yrs?)/.test(q) && /\b(grow|become|be worth|invest|fd|fixed deposit|compound|maturity|lump ?sum)\b/.test(q) && (m = new RegExp(AMT, 'i').exec(q))){
+    if(/(\d+\.?\d*)\s*%/.test(q) && /(\d+)\s*(years?|yrs?)/.test(q) && /\b(grow|grows|become|becomes|be worth|invest|fd|fixed deposit|compound|compounded|compounding|maturity|lump ?sum|after)\b/.test(q) && (m = new RegExp(AMT, 'i').exec(q))){
       const P = num(m[1]), rate = +(/(\d+\.?\d*)\s*%/.exec(q)[1]), years = +(/(\d+)\s*(years?|yrs?)/.exec(q)[1]);
       const fv = P * Math.pow(1 + rate / 100, years);
-      return {kind: 'calculator', text: `${big(P)} at ${rate}% a year, compounded yearly, becomes about ${big(fv)} in ${years} years (growth ${big(fv - P)}).`, sources: []};
+      return {kind: 'calculator', text: `${big(P)} at ${rate}% a year, compounded yearly, becomes ${inr(Math.round(fv))}${fv >= 1e5 ? ' (' + big(fv) + ')' : ''} in ${years} years (growth ${inr(Math.round(fv - P))}).`, sources: []};
     }
     // GST / percent of: "18% GST on 2500", "15% of 1200", "what is 12.5 percent of 80000"
     if((m = /(\d+\.?\d*)\s*(?:%|percent)\s*(gst\s*)?(?:of|on)\s*([\d,.]+\s*(?:lakhs?|crores?|cr|k)?)/.exec(q))){
@@ -363,7 +363,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     o = o || {};
     const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
     const today = new Date().toISOString().slice(0, 10);
-    const timely = /\b(today|now|latest|current|currently|this (week|month|year)|recent|news|live|price|rate|score|update)\b/i.test(question);
+    const timely = isTimely(question);
     const month = new Date().toLocaleString('en-US', {month: 'long', year: 'numeric'});
     const sources = [], seen = new Set(), links = [];
     // page text as reading text: link addresses, citation marks and table pipes out
@@ -448,6 +448,15 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     return {kind: 'web', text: 'The AI could not settle on an answer. The most relevant passages: ' + bestSentences(question, ps.map((p, i)=>({title: p.title, url: p.url, text: p.passage, rank: i})), 3).map(b=>b.s).join(' '), sources: ps.map(p=>({title: p.title, url: p.url})), provider};
   }
 
+  /* Is the answer something that changes (so it must be searched, not remembered)? Results, winners, office holders,
+     versions, records, counts that grow, anything this year or last — and anything said to be "latest" or "now". */
+  function isTimely(q, today){
+    const y = +(today || new Date().toISOString()).slice(0, 4);
+    q = String(q);
+    if(new RegExp('\\b(' + (y - 1) + '|' + y + '|' + (y + 1) + ')\\b').test(q)) return true;
+    return /\b(today|now|latest|newest|current|currently|this (week|month|year)|recent|recently|most recent|last|news|live|price|prices|rate|rates|score|scores|update|updates|won|win|wins|winner|winners|champion|champions|who is|who's|ceo|president|prime minister|chief minister|governor|minister|captain|coach|version|release|released|record|records|ranking|rankings|population|how many moons|number of moons|(largest|highest|biggest|greatest) number of|most (moons|medals|goals|runs|wickets|titles|trophies|followers|subscribers|populous|valuable|expensive)|richest|tallest building|fastest-growing|how many (members|countries|states|people)|days (left|until|till|to))\b/i.test(q);
+  }
+
   /* ================================================================ REVIEW: rules every answer is held to
      review(answer, {question, sources:[{n, title, text}], extra (calculator results, files), searched, timely})
        -> [{rule, text}] — what breaks the rules. Used after every draft: the model gets these back and must fix them
@@ -463,6 +472,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     R8: 'Names in the answer appear in the sources',
     R9: 'Answer once: no "Final answer" section, no repeating',
     R10: 'Something dated after today has not happened yet',
+    R11: 'Something dated before today has already happened',
   };
   // dates written in a sentence ("5 to 7 October 2026", "October 5, 2026", "2026-10-05") -> [Date]
   const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -497,6 +507,18 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       if(Math.abs(want - r) <= Math.max(0.011, Math.abs(want) * 0.0005)) nums(m[4]).forEach(n=>have.add(n));
       else out.push({rule: 'R5', text: m[0].trim() + ' is wrong; it is ' + (Math.round(want * 100) / 100).toLocaleString('en-IN') + '. Use calculate.'});
     }
+    // R5 too: longer expressions written out ("100000 * (1 + 0.07)^5 = 131079.61") are worked out again
+    for(const m of text.matchAll(/((?:[\d.,]+|[()+\-−*×\/^\s])+?)\s*=\s*₹?\s?([\d,]+(?:\.\d+)?)/g)){
+      const expr = m[1].trim();
+      if(!/[\^(]/.test(expr) && (expr.match(/[+\-−*×\/]/g) || []).length < 2) continue;            // the simple ones are above
+      const js = expr.replace(/,(?=\d{2,3}\b)/g, '').replace(/[×]/g, '*').replace(/−/g, '-').replace(/\^/g, '**');
+      if(!/^[\d.+\-*\/()\s]+$/.test(js) || !/\d/.test(js)) continue;
+      let want = NaN; try{ want = Function('"use strict"; return (' + js + ')')(); }catch(e){}
+      const got = parseFloat(m[2].replace(/,/g, ''));
+      if(!isFinite(want)) continue;
+      if(Math.abs(want - got) <= Math.max(0.011, Math.abs(want) * 0.0005)) nums(m[2]).forEach(n=>have.add(n));
+      else out.push({rule: 'R5', text: expr + ' = ' + m[2] + ' is wrong; it is ' + (Math.round(want * 100) / 100).toLocaleString('en-IN') + '. Use calculate.'});
+    }
     // R6: day counts only from the calculator
     const counts = Array.from(bare.matchAll(/\b(\d+)\s+(days?|weeks?)\b/gi)).filter(m=>!new RegExp('\\b' + m[1] + '\\s+(days?|weeks?)', 'i').test(String(c.extra || ''))).map(m=>'"' + m[0] + '"');
     if(counts.length) out.push({rule: 'R6', text: Array.from(new Set(counts)).join(', ') + ' — not worked out with calculate; do not add days up yourself.'});
@@ -508,6 +530,13 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     for(const x of sentencesOf(bare)){
       const after = datesIn(x).filter(d=>d > today);
       if(after.length && PAST.test(x) && !FUTURE.test(x)){ out.push({rule: 'R10', text: after[0].toISOString().slice(0, 10) + ' is after today (' + today.toISOString().slice(0, 10) + '), so "' + x.trim().slice(0, 80) + '" cannot have happened yet — check the source\'s date (it may be an older year).'}); break; }
+    }
+    // R11: told as still to come, but every date it gives is already past
+    const NOTYET = /\b(not (yet )?(taken place|happened|been held|started|begun)|has not yet|have not yet|hasn't|haven't|yet to|is scheduled to|are scheduled to|will (be held|take place|start|begin|run)|upcoming)\b/i;
+    for(const x of sentencesOf(bare)){
+      if(!NOTYET.test(x)) continue;
+      const ds = datesIn(x);
+      if(ds.length && ds.every(d=>d < today)){ out.push({rule: 'R11', text: ds[ds.length - 1].toISOString().slice(0, 10) + ' is before today (' + today.toISOString().slice(0, 10) + '), so "' + x.trim().slice(0, 80) + '" is wrong — it has already happened. Find what happened.'}); break; }
     }
     // R4: numbers not in what was read (a year, a list number and small counts are fine)
     if(c.sources && c.sources.length){
@@ -532,7 +561,10 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     // R8: names the sources never mention
     if(c.sources && c.sources.length){
       const q = String(c.question || '').toLowerCase();
-      const names = Array.from(new Set((bare.match(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g) || []).filter(w=>!COMMON.has(w.split(' ')[0]) && !q.includes(w.toLowerCase()))));
+      // a lone capitalised word that opens a sentence ("Updated", "Currently") is not a name
+      const names = Array.from(new Set(Array.from(bare.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g))
+        .filter(m=>m[0].includes(' ') || !/(^|[.!?:;]\s*|\n\s*(?:[-*•]\s*)?|\(\s*)$/.test(bare.slice(0, m.index)))
+        .map(m=>m[0]).filter(w=>!COMMON.has(w.split(' ')[0]) && !q.includes(w.toLowerCase()))));
       const missing = names.filter(w=>!srcL.includes(w.toLowerCase()) && !w.split(' ').every(x=>srcL.includes(x.toLowerCase())));
       if(missing.length) out.push({rule: 'R8', text: 'Not in any source read: ' + missing.slice(0, 4).join(', ') + '.'});
     }
@@ -556,6 +588,12 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
      A rule count says "you break R10 sometimes"; a case says what exactly happened, so a question like it next time
      starts with the lesson. Kept in Money Brain (topic 'case'), so it syncs like every other lesson. */
   const keyWords = q => Array.from(new Set(words(q).map(stem))).filter(w=>w.length > 2).sort();
+  // how alike two questions are (0-1); a different year (or a year on one side only) means a different question
+  const likeness = (a, b) => {
+    const ya = a.filter(w=>/^(19|20)\d\d$/.test(w)).join(), yb = b.filter(w=>/^(19|20)\d\d$/.test(w)).join();
+    if(ya !== yb) return 0;
+    return b.filter(w=>a.includes(w)).length / Math.max(3, a.length, b.length);
+  };
   function caseText(question, issue, today){
     const q = '“' + String(question).trim().slice(0, 90) + '”';
     if(issue.rule === 'R10') return 'For ' + q + ': on ' + today + ' the event (' + issue.text.slice(0, 10) + ') was still ahead; pages saying it had happened were about an older year. Check the year of every page and say it has not happened yet.';
@@ -570,7 +608,8 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     o = o || {};
     const today = o.today || new Date().toISOString().slice(0, 10), kw = keyWords(question);
     if(kw.length < 2) return;
-    const similar = rule => MoneyBrain.lessons({app: 'ai', topic: 'case'}).find(L=>{ const [r, w] = String(L.key).split('|'); const theirs = w.split(' '); return r === rule && theirs.filter(x=>kw.includes(x)).length / Math.max(3, kw.length, theirs.length) >= 0.6; });
+    // the same mistake again strengthens its lesson; what you teach joins only a lesson from (nearly) the same question
+    const similar = rule => MoneyBrain.lessons({app: 'ai', topic: 'case'}).find(L=>{ const [r, w] = String(L.key).split('|'); return r === rule && likeness(kw, w.split(' ')) >= (o.text ? 0.9 : 0.7); });
     (issues || []).forEach(i=>{
       const text = o.text || caseText(question, i, today);
       const same = similar(i.rule || 'you');                      // the same lesson again: made surer, not written twice
@@ -582,8 +621,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     if(typeof MoneyBrain === 'undefined') return [];
     const kw = keyWords(question);
     return MoneyBrain.lessons({app: 'ai', topic: 'case'}).filter(L=>!L.off).map(L=>{
-      const theirs = String(L.key).split('|')[1].split(' '), shared = theirs.filter(w=>kw.includes(w)).length;
-      return {L, score: shared / Math.max(3, kw.length, theirs.length)};
+      return {L, score: likeness(kw, String(L.key).split('|')[1].split(' '))};
     }).filter(x=>x.score >= 0.6).sort((a, b)=>b.score - a.score).slice(0, max || 3).map(x=>{ const r = MoneyBrain.recall('ai', 'case', x.L.key, {min: 0.001}); return r ? r.value : ''; })
       // "it has not happened yet" stops being true on the day: such a lesson ends then
       .filter(t=>{ const m = /the event \((\d{4}-\d{2}-\d{2})\) was still ahead/.exec(t); return t && !(m && m[1] <= (o && o.today || new Date().toISOString().slice(0, 10))); });
@@ -633,7 +671,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, review, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, isTimely, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;
