@@ -38,7 +38,7 @@ const GENERAL = [
   {kind: 'fact', q: 'Who discovered penicillin?', key: /Fleming/},
   {kind: 'fact', q: 'What is the speed of light in kilometres per second?', key: /299,?79\d/},
   {kind: 'fact', q: 'What is the largest ocean on Earth?', key: /Pacific/},
-  {kind: 'hindi', q: 'Bharat ki rajdhani kya hai?', key: /New Delhi|नई दिल्ली|Nai Dilli/i},
+  {kind: 'hindi', q: 'Bharat ki rajdhani kya hai?', key: /New Delhi|नई दिल्ली|न्यू दिल्ली|Nai Dilli/i},
   {kind: 'sum', q: 'Convert 100 km to miles', key: /62\.1/},
   {kind: 'sum', q: 'What is a 15% tip on a bill of 2,340?', key: /\b351\b/},
   {kind: 'sum', q: 'A train travels 420 km in 3.5 hours. What is its average speed?', key: /\b120\b/},
