@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* =========================================================
-   ai — the Money Home AI on the command line, on its own (like a terminal assistant).
+   ai — your own AI on the command line, on its own (like a terminal assistant); ask about anything.
      ai "question"              one answer: sums worked out exactly, facts looked up, anything else searched on the
                                 web, read, and answered by an AI with its sources
      ai                         a conversation (follow-up questions keep the thread)
@@ -96,7 +96,7 @@ async function answer(question, o){
   if(!fileSources.length && !o.deep){
     step('Checking what can be worked out or looked up exactly…');
     const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
-    if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Money Brain · ' + quick.kind + ' (no AI)'}, quick); }
+    if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick); }
   }
   // 2. the model on this Mac at the wheel: it searches (your SearXNG), reads pages (here), calculates and answers
   const ollama = cfg.ai.keys.ollama;
@@ -182,7 +182,7 @@ function ask(q, hidden){
 async function setup(){
   const c = readJson(CONFIG, {search: {}, ai: {keys: {}}});
   c.search = c.search || {}; c.ai = c.ai || {keys: {}};
-  console.log(bold('\nMoney AI — setup') + dim('  (kept in ' + CONFIG + ', readable only by you; Enter keeps what is there, "-" removes it)\n'));
+  console.log(bold('\nAI — setup') + dim('  (kept in ' + CONFIG + ', readable only by you; Enter keeps what is there, "-" removes it)\n'));
   const field = async (label, get, set, hidden) => { const now = get(); const a = await ask(label + (now ? dim(' [set]') : '') + ': ', hidden); if(a === '-') set(undefined); else if(a) set(a); };
   console.log(bold('Web search') + dim(' — any one is enough; more means more free searches'));
   await field('  Tavily keys (comma-separated, from several accounts)', ()=>c.search.tavily && c.search.tavily.length, v=>{ c.search.tavily = v ? v.split(',').map(s=>s.trim()).filter(Boolean) : []; }, true);
@@ -210,7 +210,7 @@ async function status(){
 
 async function rules(){
   const cfg = config(), {Web} = engine(cfg);
-  if(!fs.existsSync(RULES_FILE)) { fs.mkdirSync(HOME, {recursive: true, mode: 0o700}); fs.writeFileSync(RULES_FILE, '# Your rules for Money AI\n# One rule per line starting with "- ". Every answer is told to follow them.\n# For example:\n#   - Give amounts in rupees with Indian commas (1,00,000)\n#   - For cricket, say the match format (Test, ODI, T20)\n', {mode: 0o600}); }
+  if(!fs.existsSync(RULES_FILE)) { fs.mkdirSync(HOME, {recursive: true, mode: 0o700}); fs.writeFileSync(RULES_FILE, '# Your rules for your AI\n# One rule per line starting with "- ". Every answer is told to follow them.\n# For example:\n#   - Give amounts in rupees with Indian commas (1,00,000)\n#   - For cricket, say the match format (Test, ODI, T20)\n', {mode: 0o600}); }
   console.log(bold('\nEvery answer is checked against:'));
   Object.entries(Web.RULES).forEach(([k, v])=>console.log('  ' + dim(k) + ' ' + v));
   const ur = userRules();
@@ -285,14 +285,14 @@ async function main(){
   if(rest[0] === 'forget' && /^\d+$/.test(rest[1] || '') && rest.length === 2) return forgetLesson(rest[1]);
   if(rest[0] === 'ui'){ const url = 'http://127.0.0.1:8899/'; let up = false; try{ up = (await fetch(url + 'health')).ok; }catch(e){}
     if(!up){ (await import('./serve.mjs')).serve(); }
-    (await import('child_process')).execFile('open', [url]); console.log('Money AI is open at ' + url + (up ? '' : dim('  (running here; Ctrl+C stops it)'))); return; }
+    (await import('child_process')).execFile('open', [url]); console.log('Your AI is open at ' + url + (up ? '' : dim('  (running here; Ctrl+C stops it)'))); return; }
   if(rest[0] === 'serve'){ (await import('./serve.mjs')).serve(); return; }      // the local helper for the website (normally started at login)
   if(rest.length){
     try{ const q = rest.join(' '); show(Object.assign(await answer(q, o), {q}), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
     return;
   }
   // a conversation
-  console.log(bold('Money AI') + dim(' — ask anything; it works out, looks up and reads the web. /help, /exit'));
+  console.log(bold('AI') + dim(' — ask anything; it works out, looks up and reads the web. /help, /exit'));
   const rl = readline.createInterface({input: process.stdin, output: process.stdout, prompt: cyan('› ')});
   rl.prompt();
   for await (const line of rl){

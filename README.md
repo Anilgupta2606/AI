@@ -1,4 +1,4 @@
-# Money AI
+# AI
 
 The AI behind the Money Home apps (Money Home, Trip Vault, the 16-Year Ledger, the Expense Tracker), and a command-line
 assistant of its own. It **works things out** exactly, **looks things up**, **searches and reads the web**, and has an

@@ -407,7 +407,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       const ps = passagesOf();
       if(!ps.length) return {kind: 'not-found', text: 'The pages found did not answer that.', sources: []};
       const best = bestSentences(question, ps.map((p, i)=>({title: p.title, url: p.url, text: p.passage, rank: i})), 4);
-      return {kind: 'web', text: best.map(b=>b.s + ' [' + (ps.findIndex(p=>p.url === b.page.url) + 1) + ']').join(' '), sources: ps.map(p=>({title: p.title, url: p.url})), provider, by: 'Money Brain (no AI) · ' + provider};
+      return {kind: 'web', text: best.map(b=>b.s + ' [' + (ps.findIndex(p=>p.url === b.page.url) + 1) + ']').join(' '), sources: ps.map(p=>({title: p.title, url: p.url})), provider, by: 'Read from the pages (no AI) · ' + provider};
     }
     for(let round = 0; round < 3; round++){
       const ps = passagesOf();
@@ -627,7 +627,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     const chain = name => async (...args) => {
       if(local && await localHelper()){ try{ const r = await local[name](...args); used.push(name === 'search' ? 'your SearXNG' : 'this Mac'); return r; }catch(e){ if(!cloud) throw e; } }
       if(cloud){ const r = await cloud[name](...args); used.push(name === 'search' ? (r.provider || 'your relay') : 'your relay'); return r; }
-      throw new Error('No web search here: this device has no Money AI helper, and no relay is set in Setup.');
+      throw new Error('No web search here: this device has no AI helper, and no relay is set in Setup.');
     };
     return {search: chain('search'), read: chain('read'), used, local: ()=>localHelper(),
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};

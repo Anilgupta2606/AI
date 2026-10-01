@@ -80,7 +80,7 @@ export function serve(port){
       return send(404, {error: 'Use /search, /read or /health.'});
     }catch(e){ return send(502, {error: String(e.message || e)}); }
   });
-  server.listen(port || PORT, '127.0.0.1', ()=>console.log('Money AI local helper on http://127.0.0.1:' + (port || PORT)));
+  server.listen(port || PORT, '127.0.0.1', ()=>console.log('AI local helper on http://127.0.0.1:' + (port || PORT)));
   return server;
 }
 if(process.argv[1] && process.argv[1].endsWith('serve.mjs')) serve();

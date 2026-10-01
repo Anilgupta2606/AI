@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Money AI</title>
+<title>AI</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap">
 <style>
@@ -104,7 +104,7 @@ details.done summary::before{content:'▸ '} details.done[open] summary::before{
 </head>
 <body>
 <header><div class="bar">
-  <div class="mark">Money AI<small id="where">starting</small></div>
+  <div class="mark">AI<small id="where">starting</small></div>
   <div class="status" id="status"><span id="stSearch">Checking</span><span id="stModel" hidden></span></div>
   <button class="learnedBtn" id="openLearned">What it learned</button>
 </div></header>
@@ -115,10 +115,11 @@ details.done summary::before{content:'▸ '} details.done[open] summary::before{
     <p>It searches the web, reads the pages, works out sums and dates exactly, and checks its answer against its rules before you see it. On your Mac it uses your own search engine and model; anywhere else, your relay and your AI keys.</p>
     <p class="warn" id="needSetup" hidden></p>
     <div class="tries">
-      <button>What is the RBI repo rate right now?</button>
-      <button>When is Diwali in 2026, and how many days away is it?</button>
-      <button>EMI for a 50 lakh loan at 8.5% for 20 years</button>
-      <button>Who is the Prime Minister of the United Kingdom now?</button>
+      <button>What is the latest news on the James Webb telescope?</button>
+      <button>How many days until 31 December?</button>
+      <button>Explain how a vaccine trains the immune system</button>
+      <button>Who won the last Champions League final?</button>
+      <button>What is 18% of 2,450?</button>
     </div>
   </section>
   <div id="turns"></div>
@@ -179,7 +180,7 @@ function turnEl(q){
 function finish(el, q, out){
   const steps = Array.from(el.querySelectorAll('.trail li')).map(li=>li.textContent.replace(/…$/, ''));
   el.querySelector('.trail').outerHTML = steps.length ? `<details class="done"><summary>How it got here (${steps.length} step${steps.length === 1 ? '' : 's'}${out.secs ? ', ' + out.secs + ' s' : ''})</summary><ul class="trail">${steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ul></details>` : '';
-  const model = out.model || (/no AI/.test(out.by || '') ? 'Money Brain (worked out, no AI)' : '');
+  const model = out.model || (/no AI/.test(out.by || '') ? 'Worked out exactly (no AI)' : '');
   el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">${esc(model)}</span>` : ''}${render(out)}
     <div class="foot"><span class="by">${esc(out.by || '')}</span><button class="link" type="button">Wrong? Teach it</button></div></div>`;
   el.querySelector('.foot .link').onclick = () => teachBox(el, q);
@@ -291,7 +292,7 @@ async function browserAnswer(q, turns, step){
   const chat = hasAi ? (sys, t, o) => MoneyAI.chat(sys, t, o) : null;
   let quick = null;
   try{ quick = await MoneyWeb.answer(q, {factsOnly: !!(relayCfg && relayCfg.url)}); }catch(e){}
-  if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Money Brain · ' + quick.kind + ' (no AI)'}, quick);
+  if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick);
   if(relayCfg && relayCfg.url && relayCfg.token){
     const relay = MoneyWeb.relay(relayCfg, {local: false});
     return MoneyWeb.deep(q, {search: relay.search, read: relay.read, chat, onStep: step});
