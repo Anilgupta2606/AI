@@ -28,11 +28,13 @@ Work like a careful researcher:
 - For ANY arithmetic (multiplying a price by a quantity, totals, percentages, EMI) and for counting days between dates ("days from today to 8 November 2026"), call calculate first and use its result; never do sums or date counts in your head.
 - Search snippets can be old or wrong: before answering a factual question, open the most relevant page or two and confirm.
 - For general explanations you know well (what something is, how it works), you may answer directly.
+- run_code is a tool you call, never a function inside your program: do not write run_code(...) in the code.
 - You can write and build code yourself — nothing needs to exist on the internet first. When asked for a program: write it, then test it with run_code (python, javascript, c or cpp); if it fails or the output is wrong, read the error, fix the code and run it again (up to 3 tries) — the way a programmer works. For a language that cannot run here (like Java), write it carefully and test the same logic in python if useful. Use web_search only to check how a library or API is used. Then answer with the final code in a fenced Markdown block with its language (\`\`\`python … \`\`\`), the output it produced, and a short explanation. Never say you cannot write code.
 - Files the user attached are in run_code's folder by the name given (open('sales.csv')). To analyse a table (totals, averages, top items, trends, filters), write Python with the csv module (no pandas) and run it — do not add up numbers by eye; a table's exact summary is given at its top. For a document, quote the parts you use.
 - Format answers in Markdown: start with the answer itself (not "The page confirms…" or "Based on my search…"), then short paragraphs, "- " lists for steps or points, **bold** for the key figure.
 - For markets and shares (an index, a stock, crypto, gold, a currency) — prices, trend, technical analysis, "will it fall or rise", "what do you think" — call market_analysis: it fetches real prices and works out the indicators. Never say you have no market data. Then web_search for the news behind the move. Answer with the trend, the key levels (support, resistance, averages), what the indicators lean to and what would confirm or cancel a further fall or rise. It is analysis, not a promise: no one knows the future, and do not tell the user to buy or sell.
 - Sources disagree sometimes: say so, and prefer the newest and most official.
+- Logic: a conclusion follows only if it must be true in every possible case. "All A are B" and "some B are C" do NOT mean "some A are C" (the C ones may not be A). If you can think of a case where the premises hold and the conclusion fails, the answer is no.
 - Leave out sources that turned out to be unrelated — do not mention or explain them; answer only what was asked.
 - When you have enough, write the answer once: clear plain sentences, every fact from a source marked with its number like [3]. Copy numbers and names exactly as the source gives them. Say what you could not find. No separate "Final answer" section, no repeating yourself.
 Do not invent sources or numbers.`;
@@ -43,6 +45,10 @@ const RULEBOOK = o => (o.rules && o.rules.length ? '\nRules (your draft is check
   (o.timing ? '\n' + o.timing : '');
 
 // the tools this answer may use: switched-off ones left out, your connectors added as one tool
+// JSON as models write it: a backslash that is not a JSON escape (\w \s \d in a regular expression) kept as it is
+export const looseJSON = t => JSON.parse(String(t).replace(/\\'/g, "'").replace(/\\(?!["\\/bfnrtu])/g, '\\\\'));
+// code as models write it: a "run_code(...)" line inside the program is the tool, not Python — taken out
+const noToolCalls = code => String(code).split('\n').filter((l, i, all)=>!/\brun_code\s*\(/.test(l) && !(/^\s*print\(\s*result\s*\)\s*$/.test(l) && i > 0 && /\brun_code\s*\(/.test(all[i - 1]))).join('\n');
 function toolsFor(o){
   const off = new Set(o.disabled || []);
   const map = {web_search: 'web', open_page: 'read', calculate: 'calc', market_analysis: 'market', run_code: 'code', read_file: 'files'};
@@ -157,13 +163,22 @@ export async function runAgent(question, o){
   });
   const lessons = o.cases && o.cases.length ? '\n\n(Corrections you were given before for questions like this — they override what you remember; still check with a search when the answer can change:\n' + o.cases.map(m=>'- ' + m).join('\n') + ')' : '';
   const tools = toolsFor(o);
+  // the format the user asked for: said first and plainly, checked at the end, and the nudges that fight it held back
+  const fmt = o.format || {};
+  const LANG_SCRIPT = {hindi: /[\u0900-\u097F]/, marathi: /[\u0900-\u097F]/, gujarati: /[\u0A80-\u0AFF]/, tamil: /[\u0B80-\u0BFF]/, telugu: /[\u0C00-\u0C7F]/, bengali: /[\u0980-\u09FF]/, kannada: /[\u0C80-\u0CFF]/};
+  const NUMW = {one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10};
+  const wantBullets = fmt.bullets ? (NUMW[String(fmt.bullets).toLowerCase()] || +fmt.bullets || null) : null;
+  const formatRule = [fmt.oneWord ? 'Answer with ONE word only — no sentence, no punctuation, nothing else.' : '', fmt.numberOnly ? 'Answer with the number only — no words.' : '',
+    wantBullets ? 'Answer with exactly ' + wantBullets + ' "- " bullet lines and nothing else.' : '', fmt.lang ? 'Write the whole answer in ' + fmt.lang + (LANG_SCRIPT[fmt.lang.toLowerCase()] ? ' script' : '') + ', not English.' : '',
+    fmt.terse ? 'Give only the answer, no explanation.' : ''].filter(Boolean).join(' ');
+  const strictFormat = !!formatRule;
   // your goal for this conversation and what you asked it to remember about you
   const about = (o.goal ? '\nThe user\'s goal in this conversation: ' + o.goal : '') + (o.profile && o.profile.length ? '\nWhat the user asked you to remember about them:\n' + o.profile.map(p=>'- ' + p).join('\n') : '') +
     ((o.disabled || []).length ? '\nSwitched off by the user (do not try them): ' + o.disabled.join(', ') + '.' : '');
-  const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o) + about}].concat(o.history || [], [{role: 'user', content: question + lessons + (attached.length ? '\n\nFiles I attached (answer from them; cite them like [1]):\n' + attached.join('\n\n') : '')}]);
+  const messages = [{role: 'system', content: (strictFormat ? 'FORMAT (the user\'s instruction — this comes before everything below): ' + formatRule + '\n\n' : '') + SYSTEM(today) + RULEBOOK(o) + about}].concat(o.history || [], [{role: 'user', content: question + lessons + (attached.length ? '\n\nFiles I attached (answer from them; cite them like [1]):\n' + attached.join('\n\n') : '')}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = (o.attachments || []).length ? false : o.isTimely ? o.isTimely(question) : /\b(today|now|latest|current|recent|news|price|rate|score|who is|who won)\b/i.test(question);
-  let lastResults = [], lastChart = null, prevIssues = '';
+  let lastResults = [], lastChart = null, prevIssues = '', fakeToolNudged = false, formatFixes = 0;
   let runs = 0, lastRun = null, nudgedRun = false, fixes = 0;
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
@@ -214,6 +229,7 @@ export async function runAgent(question, o){
     if(name === 'run_code'){
       if(!o.runCode) return 'Running code is not available here.';
       step('▶️ Running ' + String(args.language || 'code') + ' (try ' + (++runs) + ')');
+      args.code = noToolCalls(args.code || '');
       const r = await o.runCode({language: args.language, code: args.code, stdin: args.stdin, files: (o.attachments || []).filter(a=>!a.image).map(a=>({name: a.name.replace(/ — in run_code:.*$/, ''), text: a.text.replace(/^TABLE SUMMARY[\s\S]*?\n\n/, '')}))});
       lastRun = Object.assign({}, r, {code: String(args.code || '')});
       trace('run', 'Ran ' + (r.language || args.language) + ' — ' + (r.ok ? 'worked' : r.exit === 'timeout' ? 'too slow (stopped)' : 'failed'), {lang: r.language || args.language, code: String(args.code || '').slice(0, 6000), output: r.output, ok: r.ok});
@@ -274,7 +290,7 @@ export async function runAgent(question, o){
       await asTool('market_analysis', {market: question, timeframe: /\bweek/i.test(question) ? 'week' : /\bhour/i.test(question) ? 'hour' : 'day'});
       const newsQ = await asTool('web_search', {query: question.replace(/\b(can you|please|do|technical analysis|what you feel|will it|see if)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + ' news today'});
       if(forceCloud){ const pick = lastResults.filter(x=>x.url && !/youtube|facebook|instagram|x\.com|twitter/i.test(x.url)).slice(0, 2); await Promise.all(pick.map(x=>run('open_page', {url: x.url}).then(g=>messages.push({role: 'tool', tool_name: 'open_page', content: g})).catch(()=>{}))); }
-    } else if((timely || forceCloud) && !codeQ && o.search && !off.has('web')){
+    } else if((timely || forceCloud || (/\b(kaun|kaunsa|kaunsi|kya|kis|kahan|kab|kitne|kitna|kitni|hai|hain|hota|hoti|hote)\b/i.test(question) && /\b(kaun|kaunsa|kaunsi|kis|kahan|kab|naam|rashtriya|rajdhani|pehla|pehli|sabse)\b/i.test(question)) || /[\u0900-\u097F]{3}/.test(question)) && !codeQ && o.search && !off.has('web')){
       step('Researching before thinking');
       await asTool('web_search', {query: question});
       // the two to read: the most trusted of the top six (official, then reference and news), relevance breaking ties
@@ -319,7 +335,7 @@ export async function runAgent(question, o){
         const at = text.indexOf('{'); if(at < 0 || !/"name"\s*:/.test(text)) return null;
         let body = text.slice(at).replace(/```[\s\S]*$/, '').trim(), j = null;
         body = body.replace(/\\'/g, "'");                             // \' is not JSON, but models write it
-        for(let k = 0; k < 3 && !j; k++){ try{ j = JSON.parse(body); }catch(e){ body += '}'; } }
+        for(let k = 0; k < 3 && !j; k++){ try{ j = looseJSON(body); }catch(e){ body += '}'; } }
         if(!j || !/^(web_search|open_page|calculate|read_file|market_analysis|run_code|use_connector|search_chats)$/.test(j.name || '')) return null;
         const a = j.arguments || j.parameters || {};
         return [null, j.name, a.query || a.url || a.expression || a.path || a.market || a.code || a.connector || 'x', typeof a === 'object' ? a : null];
@@ -334,6 +350,21 @@ export async function runAgent(question, o){
       continue;
     }
     if(!text && best) text = best.text;                            // out of steps mid-fix: the best draft so far stands
+    // a made-up "tool" (the coding model writes {"name": "count_vowels", …} for the function it was asked to write)
+    if(/^\W*(```json)?\s*\{\s*"name"\s*:/.test(text) && !written && turn < 8 && !fakeToolNudged){
+      fakeToolNudged = true;
+      pushBack(text, 'That is not one of your tools. ' + (codeQ ? 'Write the function itself in a fenced code block (```python … ```), then test it with run_code.' : 'Answer the question in plain sentences.'));
+      continue;
+    }
+    // the format the user asked for
+    if(strictFormat && text && formatFixes < 2 && turn < 8){
+      const bare = text.replace(/\[\d+\]/g, '').trim(), problems = [];
+      if(fmt.oneWord && bare.split(/\s+/).filter(w=>/\w/.test(w)).length > 1) problems.push('Answer with one word only.');
+      if(fmt.numberOnly && !/^\W*-?\d[\d,]*(\.\d+)?\W*$/.test(bare)) problems.push('Answer with the number only.');
+      if(wantBullets && (bare.match(/^\s*[-*•]\s+\S/gm) || []).length !== wantBullets) problems.push('Answer with exactly ' + wantBullets + ' "- " bullet lines, nothing else.');
+      if(fmt.lang && LANG_SCRIPT[fmt.lang.toLowerCase()] && !LANG_SCRIPT[fmt.lang.toLowerCase()].test(bare)) problems.push('Write it in ' + fmt.lang + ' script, not English.');
+      if(problems.length){ formatFixes++; pushBack(text, 'Follow the format the user asked for: ' + problems.join(' ')); continue; }
+    }
     // a question about now, answered from memory: look it up first (once)
     if(!forceCloud && !searches && !nudged && timely && turn < 8){
       nudged = true;
@@ -341,7 +372,7 @@ export async function runAgent(question, o){
       continue;
     }
     // not an answer (a bare expression, a fragment): ask for a proper one
-    if(!forceCloud && (text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
+    if(!forceCloud && !strictFormat && (text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
       pushBack(text, 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.');
       continue;
     }
@@ -431,8 +462,8 @@ export async function runAgent(question, o){
     // what really printed (a small model sometimes writes output it never ran)
     if(o.runCode && !(o.disabled || []).includes('code')){
       let m = /```[ \t]*(python3?|py|javascript|js|c|cpp|c\+\+)\s*\n([\s\S]*?)```/i.exec(text), lang, code;
-      if(m){ lang = m[1]; code = m[2]; }
-      else { const j = /```json\s*([\s\S]*?)```/i.exec(text); if(j){ try{ const o2 = JSON.parse(j[1].replace(/\\'/g, "'")); const a2 = o2.arguments || {}; if(o2.name === 'run_code' && a2.code){ lang = a2.language || 'python'; code = a2.code; text = text.replace(j[0], '```' + lang + '\n' + code.trim() + '\n```'); } }catch(e){} } }
+      if(m){ lang = m[1]; code = noToolCalls(m[2]); if(code !== m[2]) text = text.replace(m[2], code); }
+      else { const j = /```json\s*([\s\S]*?)```/i.exec(text); if(j){ try{ const o2 = looseJSON(j[1]); const a2 = o2.arguments || {}; if(o2.name === 'run_code' && a2.code){ lang = a2.language || 'python'; code = a2.code; text = text.replace(j[0], '```' + lang + '\n' + code.trim() + '\n```'); } }catch(e){} } }
       if(code && !(lastRun && lastRun.code && lastRun.code.trim() === code.trim())){
         step('▶️ Checking the code in the answer');
         const rr = await o.runCode({language: lang, code, files: (o.attachments || []).filter(a=>!a.image).map(a=>({name: a.name.replace(/ — in run_code:.*$/, ''), text: a.text.replace(/^TABLE SUMMARY[\s\S]*?\n\n/, '')}))});
@@ -452,7 +483,7 @@ export async function runAgent(question, o){
     // what is still wrong after fixing is shown, not hidden
     const warn = issuesLeft.filter(i=>/R4|R5|R7|R8|R10|R11/.test(i.rule)).map(i=>'⚠ ' + i.text);
     if(issuesLeft.some(i=>i.rule === 'R6') && dayFacts.length) warn.push('✔ Checked with the calculator: ' + dayFacts.join(' '));
-    if(warn.length) text += '\n\n' + warn.join('\n');
+    if(warn.length && !strictFormat) text += '\n\n' + warn.join('\n');
     // an answer built on something that cannot have happened yet: say so first, not in a footnote
     const future = issuesLeft.find(i=>i.rule === 'R10');
     if(future) text = '⚠ Careful — this answer may be built on an older year\'s news: ' + future.text + '\n\n' + text.replace('\n⚠ ' + future.text, '');

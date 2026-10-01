@@ -119,8 +119,19 @@ async function answer(question, o){
   }
   if(!fileSources.length && !o.deep && !followUp && !attached && !aboutPast){
     step('Checking what can be worked out or looked up exactly…');
-    const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
-    if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick); }
+    let quick = formatAsk(question).lang ? null : await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);    // "reply in Hindi": the model answers
+    // a looked-up fact only when it answers this question: not when the question has a qualifier the lookup
+    // ignores ("the FIRST prime minister", "who WROTE…", "when did X BECOME…"), and not when its answer misses
+    // the question's own key words ("national anthem" answered with the national song)
+    if(quick && quick.kind === 'fact'){
+      const qualified = /\b(first|second|third|last|former|previous|ex-?|founding|original|earliest|oldest|youngest|wrote|written|composed|invented|discovered|founded|built|designed|became|become|becomes|elected|appointed|in which year|which year|when did|when was|how long|until|before|after|during|never)\b/i.test(question);
+      const STOPQ = /^(who|what|which|when|where|is|are|was|were|the|a|an|of|in|on|for|to|and|or|does|did|do|has|have|how|many|much|name|tell|me)$/i;
+      const keyw = String(question).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w=>w.length > 2 && !STOPQ.test(w));
+      const said = String(quick.text || '').toLowerCase();
+      const covered = keyw.filter(w=>said.includes(w.replace(/s$/, ''))).length;
+      if(qualified || (keyw.length >= 2 && covered < Math.ceil(keyw.length / 2))) quick = null;
+    }
+    if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return formatted(question, Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick)); }
   }
   // 2. the model on this Mac at the wheel: it searches (your SearXNG), reads pages (here), calculates and answers
   const ollama = cfg.ai.keys.ollama;
@@ -198,12 +209,12 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see, signal: o.signal,
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see, signal: o.signal, format: formatAsk(question),
         trustOf: Web.trustOf, trustRank: u => Web.TRUST_RANK[Web.trustOf(u)] || 0, searchChats: (q, n) => searchSessions(q, n),
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
         cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}, o.signal) : null,
         market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
-      done(); if(!(o.history || []).length && !attached) keepAnswer(question, out); return out;
+      done(); formatted(question, out); if(!(o.history || []).length && !attached) keepAnswer(question, out); return out;
     }
   }
   // 3. no model on this Mac: the classic way (search, read, then an online AI answers)
@@ -319,6 +330,20 @@ export function feedback({question, good, note, answer}){
 }
 export function forgetId(id){ const cfg = config(); engine(cfg); const L = cases().concat(global.MoneyBrain.lessons({app: 'ai', topic: 'profile'})).find(x=>x.id === id); if(!L) return false; global.MoneyBrain.forget(id); return true; }
 export {answer};
+/* FORMAT the user asked for, kept in code where it can be: "a number only" -> just the number */
+export const formatAsk = q => ({
+  numberOnly: /\b(number only|only (the|a) number|just the number|numeric answer only|digits only)\b/i.test(q),
+  oneWord: /\b(one word|single word|in a word)\b(?! or more)/i.test(q) && /\b(only|answer|reply)\b/i.test(q),
+  bullets: (/\bexactly (\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b[^.?!]*\b(bullet|item|point)s?\b|\bas a bullet list\b/i.exec(q) || [])[1] || null,
+  lang: (/\b(?:reply|answer|respond|write)\s+(?:only\s+)?in\s+(hindi|marathi|gujarati|tamil|telugu|bengali|kannada|french|spanish|german)\b/i.exec(q) || [])[1] || null,
+  terse: /\b(nothing else|no explanation|without explanation|just (the )?answer)\b/i.test(q),
+});
+function formatted(q, out){
+  const f = formatAsk(q);
+  if(f.numberOnly){ const ns = String(out.text || '').replace(/\[\d+\]/g, '').match(/-?\d[\d,]*(?:\.\d+)?/g) || []; if(ns.length) out.text = ns[ns.length - 1]; }
+  return out;
+}
+
 /* SECOND OPINION: another pass, strict and narrow — each claim judged only against its own evidence
    (supported / not found / contradicted). A fast cloud model when cloud is on (a different model from the one that
    wrote it), else a JSON-only local pass. It sets the final confidence; a contradiction is remembered as a lesson. */
