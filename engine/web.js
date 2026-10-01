@@ -489,7 +489,8 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
   const sentencesOf = t => String(t).match(/(?:[^.!?\n]|\.(?=\d))+[.!?]?/g) || [];
   function review(answer, c){
     c = c || {};
-    const out = [], text = String(answer || ''), bare = text.replace(/\[\d+\]/g, '');
+    // code is checked by running it, not by these rules: fenced blocks and `inline code` are left out
+    const out = [], text = String(answer || '').replace(/```[\s\S]*?(```|$)/g, ' ').replace(/`[^`\n]*`/g, ' '), bare = text.replace(/\[\d+\]/g, '');
     const src = (c.sources || []).map(s=>String(s.title || '') + ' ' + String(s.text || '')).join(' ') + ' ' + String(c.extra || '');
     const srcL = src.toLowerCase();
     const nums = t => (String(t).match(/\d[\d,]*(?:\.\d+)?/g) || []).map(x=>x.replace(/,/g, '').replace(/\.$/, ''));

@@ -25,6 +25,7 @@ import readline from 'readline';
 import * as Local from './local.mjs';
 import {runAgent} from './agent.mjs';
 import * as Market from './market.mjs';
+import * as Runner from './runner.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -83,7 +84,7 @@ const FILE_TYPES = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|yaml|yml|ini|j
 async function answer(question, o){
   const cfg = config(), {AI, Web} = engine(cfg), S = await searcher(cfg);
   const hasAi = AI.aiAvailable() && !o.noAi;
-  const step = t => { if(o.onStep) return o.onStep(t); if(o.json || !tty) return; if(/^[🔎📄🧮📂📈]/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
+  const step = t => { if(o.onStep) return o.onStep(t); if(o.json || !tty) return; if(/^(?:[🔎📄🧮📂📈]|▶)/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
   const done = () => { if(!o.json && tty && !o.onStep) process.stderr.write('\r\x1b[K'); };
   const chat = hasAi ? (system, turns, opts) => AI.chat(system, (o.history || []).concat(turns), Object.assign({}, opts, {onProgress: t=>step(t)})) : null;
   // a file: its text is a source too
@@ -143,8 +144,8 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step,
-        market: (q, tf) => Market.analyse(q, tf), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace,
+        market: (q, tf) => Market.analyse(q, tf), runCode: a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
   }

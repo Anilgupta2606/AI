@@ -96,6 +96,27 @@ details.how summary .dots{display:inline-flex; gap:3px}
 details.how summary .dots i{width:8px; height:8px; border-radius:50%; background:var(--think)}
 .dots i.search{background:var(--search)!important} .dots i.read{background:var(--read)!important} .dots i.calc{background:var(--calc)!important} .dots i.check{background:var(--check)!important}
 details.how .steps{margin:10px 0 4px}
+.wbody{min-width:0; flex:1}
+.live .tl{margin-top:10px}
+.tl{display:flex; flex-direction:column; gap:4px; margin:10px 0 6px; padding-left:12px; border-left:2px solid var(--line)}
+.trow{border-radius:12px; min-width:0}
+.trow summary,.tsum{display:flex; gap:8px; align-items:center; padding:5px 10px; border-radius:10px; font-size:13.5px; color:var(--ink2); cursor:pointer; list-style:none; min-width:0}
+.tsum{cursor:default}
+.trow summary::-webkit-details-marker{display:none}
+.trow summary span,.tsum span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.trow summary:hover{background:var(--card)}
+.trow i{font-style:normal; width:22px; height:22px; display:grid; place-items:center; border-radius:7px; font-size:12px; flex:none; background:var(--think-bg)}
+.trow.search i{background:var(--search-bg)} .trow.read i{background:var(--read-bg)} .trow.calc i{background:var(--calc-bg)} .trow.check i{background:var(--check-bg)}
+.trow summary::after{content:'▸'; margin-left:auto; color:var(--mut); font-size:11px} .trow[open] summary::after{content:'▾'}
+.trow.now summary span,.trow.now .tsum span{color:var(--ink); font-weight:600}
+.tbody{margin:4px 0 10px 30px; font-size:13.5px}
+.tdx{white-space:pre-wrap; font:12.5px/1.55 var(--mono); background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:4px 0; max-height:320px; overflow:auto}
+.tdx.dim{color:var(--mut)}
+.tres{margin:4px 0; padding-left:20px} .tres li{margin:0 0 4px} .tres a{color:var(--search); text-decoration:none; font-weight:500} .tres small{display:block; color:var(--mut)}
+.tq{margin:4px 0; padding:8px 12px; border-left:3px solid var(--read); background:var(--card); border-radius:0 10px 10px 0; white-space:pre-wrap; color:var(--ink2); max-height:260px; overflow:auto}
+.tnote{font-size:12px; font-weight:600; color:var(--mut); margin:8px 0 2px} .tnote a{color:var(--read)}
+.tout{white-space:pre-wrap; font:12.5px/1.5 var(--mono); border-radius:10px; padding:10px 12px; margin:2px 0; max-height:260px; overflow:auto}
+.tout.ok{background:var(--read-bg); color:var(--ink)} .tout.bad{background:var(--check-bg); color:var(--ink)}
 .a{background:var(--card); border:1px solid var(--line); border-radius:6px 22px 22px 22px; padding:18px 20px; box-shadow:var(--shadow)}
 .a p{margin:0 0 10px} .a p:last-of-type{margin-bottom:0}
 .a sup a{font:600 11px var(--body); text-decoration:none; background:var(--search-bg); color:var(--search); border-radius:6px; padding:1px 6px; margin-left:2px}
@@ -219,8 +240,8 @@ let history = store.get('moneyai.history', []);          // [{q, answer, steps}]
 let busy = false;
 
 /* a step's kind (its colour), from what the engine says it is doing */
-const kindOf = t => /^🔎|search/i.test(t) ? 'search' : /^📄|^📂|read/i.test(t) ? 'read' : /^🧮|^📈|calculat|analys|worked out/i.test(t) ? 'calc' : /rules|check/i.test(t) ? 'check' : 'think';
-const tidyStep = t => String(t).replace(/^[🔎📄🧮📂📈]\s*/u, '').replace(/…$/, '');
+const kindOf = t => /^🔎|search/i.test(t) ? 'search' : /^📄|^📂|read/i.test(t) ? 'read' : /^🧮|^📈|^▶|calculat|analys|running|worked out/i.test(t) ? 'calc' : /rules|check/i.test(t) ? 'check' : 'think';
+const tidyStep = t => String(t).replace(/^(?:[🔎📄🧮📂📈]|▶️?)\s*/u, '').replace(/…$/, '');
 const stepHtml = (s, now) => `<span class="step ${s.k}${now ? ' now' : ''}" title="${esc(s.t)}"><span>${esc(s.t)}</span></span>`;
 const host = u => { try{ return new URL(u).hostname.replace(/^www\./, ''); }catch(e){ return ''; } };
 const hue = s => { let h = 0; for(const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
@@ -265,17 +286,39 @@ function render(out){
   if(!cited.length && !also.length && usedModel) src += `<p class="memory">From the model's own knowledge — no web pages were read for this answer.</p>`;
   return markdown(out.text, urls) + src;
 }
+/* "How it got here": every step, each opening to what it did — searched (and the results), read (the passage),
+   worked out, ran (the code and its output), and what the checks sent back. Built live while it works. */
+const ICON = {think: '💭', search: '🔎', read: '📄', calc: '🧮', run: '▶', check: '✓', done: '✦'};
+const KIND = {think: 'think', search: 'search', read: 'read', calc: 'calc', run: 'calc', check: 'check'};
+function traceDetail(d){
+  if(d == null || d === '') return '';
+  if(typeof d === 'string') return `<pre class="tdx">${esc(d)}</pre>`;
+  if(d.results) return `<ol class="tres">${d.results.map(r=>`<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.url)}</a><small>${esc(host(r.url))}${r.date ? ' · ' + esc(r.date) : ''}</small></li>`).join('')}</ol>${d.via ? `<div class="tnote">via ${esc(d.via)}</div>` : ''}`;
+  if(d.code != null) return `<div class="code"><div class="codehead"><span>${esc(d.lang || 'code')}</span><button class="copy" type="button">Copy</button></div><pre><code>${esc(d.code)}</code></pre></div><div class="tnote">Output</div><pre class="tout ${d.ok ? 'ok' : 'bad'}">${esc(d.output || '')}</pre>`;
+  if(d.excerpt != null) return `${d.url ? `<div class="tnote"><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(host(d.url))}</a>${d.when ? ' · ' + esc(d.when) : ''}</div>` : ''}<blockquote class="tq">${esc(d.excerpt)}</blockquote>`;
+  if(d.why != null) return `<div class="tnote">What it was told to fix</div><pre class="tdx">${esc(d.why)}</pre><div class="tnote">The draft it sent back</div><pre class="tdx dim">${esc(d.draft || '')}</pre>`;
+  return `<pre class="tdx">${esc(JSON.stringify(d, null, 2))}</pre>`;
+}
+const traceRow = (t, live) => { const k = KIND[t.kind] || 'think', det = traceDetail(t.detail);
+  return det ? `<details class="trow ${k}${live ? ' now' : ''}"><summary><i>${ICON[t.kind] || '•'}</i><span>${esc(t.title)}</span></summary><div class="tbody">${det}</div></details>`
+    : `<div class="trow ${k}${live ? ' now' : ''}"><div class="tsum"><i>${ICON[t.kind] || '•'}</i><span>${esc(t.title)}</span></div></div>`; };
+const timeline = (traces, live) => `<div class="tl">${traces.map((t, i)=>traceRow(t, live && i === traces.length - 1)).join('')}</div>`;
+// kept small in this browser: the newest turns keep their details, older ones their titles
+const slim = traces => (traces || []).slice(0, 40).map(t=>{ const d = t.detail; if(!d || typeof d === 'string') return {kind: t.kind, title: t.title, detail: typeof d === 'string' ? d.slice(0, 1500) : d};
+  const c = Object.assign({}, d); ['code', 'output', 'excerpt', 'draft', 'why'].forEach(f=>{ if(c[f]) c[f] = String(c[f]).slice(0, 1500); }); return {kind: t.kind, title: t.title, detail: c}; });
+
 function turnEl(q){
   const el = document.createElement('section');
   el.className = 'turn';
-  el.innerHTML = `<div class="q"><div>${esc(q)}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="steps"></div></div><div class="slot"></div>`;
+  el.innerHTML = `<div class="q"><div>${esc(q)}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="wbody"><div class="steps"></div><div class="live"></div></div></div><div class="slot"></div>`;
   $('#turns').appendChild(el);
   $('#hello').hidden = true;
   return el;
 }
-function finish(el, q, out, steps){
-  steps = steps || [];
-  el.querySelector('.work').outerHTML = steps.length ? `<details class="how"><summary><span class="dots">${steps.map(s=>`<i class="${s.k}"></i>`).join('')}</span>How it got here · ${steps.length} step${steps.length === 1 ? '' : 's'}${out.secs ? ' · ' + out.secs + ' s' : ''}</summary><div class="steps">${steps.map(s=>stepHtml(s)).join('')}</div></details>` : '';
+function finish(el, q, out, steps, traces){
+  steps = steps || []; traces = traces || [];
+  const n = traces.length || steps.length, dots = traces.length ? traces.map(t=>`<i class="${KIND[t.kind] || 'think'}"></i>`) : steps.map(s=>`<i class="${s.k}"></i>`);
+  el.querySelector('.work').outerHTML = n ? `<details class="how"><summary><span class="dots">${dots.join('')}</span>How it got here · ${n} step${n === 1 ? '' : 's'}${out.secs ? ' · ' + out.secs + ' s' : ''}</summary>${traces.length ? timeline(traces) : `<div class="steps">${steps.map(s=>stepHtml(s)).join('')}</div>`}</details>` : '';
   const model = out.model || (/no AI/.test(out.by || '') ? 'Worked out exactly (no AI)' : '');
   el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">✦ ${esc(model)}</span>` : ''}${render(out)}
     <div class="foot"><span class="by">${esc(out.by || '')}</span><button class="ghost" type="button">Not right? Teach me</button></div></div>`;
@@ -302,21 +345,23 @@ async function ask(q){
   q = q.trim();
   if(!q || busy) return;
   busy = true; $('#ask').disabled = true; $('#q').value = ''; grow(); $('#orb').classList.add('busy');
-  const el = turnEl(q), box = el.querySelector('.steps'), steps = [];
+  const el = turnEl(q), box = el.querySelector('.steps'), live = el.querySelector('.live'), steps = [], traces = [];
+  const addTrace = t => { traces.push(t); const open = Array.from(live.querySelectorAll('details')).map(d=>d.open); live.innerHTML = timeline(traces, true); live.querySelectorAll('details').forEach((d, i)=>{ if(open[i]) d.open = true; }); };
   el.scrollIntoView({behavior: 'smooth', block: 'start'});
   const step = t => {
     const s = {t: tidyStep(t), k: kindOf(t)};
     if(!s.t) return;
     steps.push(s);
-    box.innerHTML = steps.map((x, i)=>stepHtml(x, i === steps.length - 1)).join('');
+    box.innerHTML = stepHtml(steps[steps.length - 1], true);                   // the step it is on now
   };
   step('Starting');
   const turns = history.slice(-3).flatMap(h=>[{role: 'user', content: h.q}, {role: 'assistant', content: String(h.answer.text || '').slice(0, 1500)}]);
   const done = out => {
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
-    finish(el, q, out, steps);
-    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model}, steps});
-    history = history.slice(-20); store.set('moneyai.history', history);
+    finish(el, q, out, steps, traces);
+    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model}, steps, traces: slim(traces)});
+    history = history.slice(-20).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
+    store.set('moneyai.history', history);
   };
   try{
     await ready;
@@ -340,6 +385,7 @@ async function ask(q){
           if(!line.trim()) continue;
           const m = JSON.parse(line);
           if(m.step) step(m.step);
+          if(m.trace) addTrace(m.trace);
           if(m.error) throw new Error(m.error);
           if(m.answer) out = m.answer;
         }
@@ -460,7 +506,7 @@ $('#scrim').onclick = () => openPanel(false);
 document.addEventListener('keydown', e=>{ if(e.key === 'Escape') openPanel(false); });
 $('#clear').onclick = () => { history = []; store.set('moneyai.history', []); $('#turns').innerHTML = ''; $('#hello').hidden = false; };
 // the conversation so far comes back after a reload
-history.forEach(h=>{ if(h && h.answer){ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || []); } });
+history.forEach(h=>{ if(h && h.answer){ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); } });
 const ready = detect(); $('#q').focus();
 </script>
 </body>

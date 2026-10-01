@@ -15,6 +15,8 @@ const TOOLS = [
     parameters: {type: 'object', properties: {expression: {type: 'string'}}, required: ['expression']}}},
   {type: 'function', function: {name: 'market_analysis', description: 'Real prices and a technical analysis worked out in code for an index, stock, crypto, currency or commodity: trend, moving averages, RSI, MACD, Bollinger bands, support and resistance, 52-week range, recent changes and what would confirm or cancel the move. Use it for any question about a market or share: its price, trend, "will it fall/rise", technical analysis.',
     parameters: {type: 'object', properties: {market: {type: 'string', description: 'What to analyse, as the user says it: "Nifty 50", "Indian stock market", "Sensex", "Reliance", "HDFC Bank", "bitcoin", "gold"'}, timeframe: {type: 'string', enum: ['day', 'week', 'hour'], description: 'Candle size: day (default), week or hour'}}, required: ['market']}}},
+  {type: 'function', function: {name: 'run_code', description: 'Run a complete program and get its output or error, to test code you wrote (in a sandbox: no internet, no files outside its own folder, 20 s limit). Languages: python, javascript, c, cpp. Print results so you can see them.',
+    parameters: {type: 'object', properties: {language: {type: 'string', enum: ['python', 'javascript', 'c', 'cpp', 'java']}, code: {type: 'string', description: 'The whole program'}, stdin: {type: 'string', description: 'Input to feed it (optional)'}}, required: ['language', 'code']}}},
   {type: 'function', function: {name: 'read_file', description: 'Read a text file on this computer that the user mentioned.',
     parameters: {type: 'object', properties: {path: {type: 'string'}}, required: ['path']}}},
 ];
@@ -24,8 +26,8 @@ Work like a careful researcher:
 - For ANY arithmetic (multiplying a price by a quantity, totals, percentages, EMI) and for counting days between dates ("days from today to 8 November 2026"), call calculate first and use its result; never do sums or date counts in your head.
 - Search snippets can be old or wrong: before answering a factual question, open the most relevant page or two and confirm.
 - For general explanations you know well (what something is, how it works), you may answer directly.
-- You can write code: when asked, write complete, working code in a fenced Markdown block with its language (\`\`\`java … \`\`\`), then explain it briefly. Never say you cannot write code. (You cannot run it here, so say how to run it.)
-- Format answers in Markdown: short paragraphs, "- " lists for steps or points, **bold** for the key figure.
+- You can write and build code yourself — nothing needs to exist on the internet first. When asked for a program: write it, then test it with run_code (python, javascript, c or cpp); if it fails or the output is wrong, read the error, fix the code and run it again (up to 3 tries) — the way a programmer works. For a language that cannot run here (like Java), write it carefully and test the same logic in python if useful. Use web_search only to check how a library or API is used. Then answer with the final code in a fenced Markdown block with its language (\`\`\`python … \`\`\`), the output it produced, and a short explanation. Never say you cannot write code.
+- Format answers in Markdown: start with the answer itself (not "The page confirms…" or "Based on my search…"), then short paragraphs, "- " lists for steps or points, **bold** for the key figure.
 - For markets and shares (an index, a stock, crypto, gold, a currency) — prices, trend, technical analysis, "will it fall or rise", "what do you think" — call market_analysis: it fetches real prices and works out the indicators. Never say you have no market data. Then web_search for the news behind the move. Answer with the trend, the key levels (support, resistance, averages), what the indicators lean to and what would confirm or cancel a further fall or rise. It is analysis, not a promise: no one knows the future, and do not tell the user to buy or sell.
 - Sources disagree sometimes: say so, and prefer the newest and most official.
 - When you have enough, write the answer once: clear plain sentences, every fact from a source marked with its number like [3]. Copy numbers and names exactly as the source gives them. Say what you could not find. No separate "Final answer" section, no repeating yourself.
@@ -38,6 +40,13 @@ const RULEBOOK = o => (o.rules && o.rules.length ? '\nRules (your draft is check
 
 export async function runAgent(question, o){
   const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
+  // the full record of each step (what it searched and got back, read, worked out, ran, and what the checks sent back)
+  const trace = (kind, title, detail) => { try{ o.onTrace && o.onTrace({kind, title: String(title).slice(0, 160), detail: typeof detail === 'string' ? detail.slice(0, 3000) : detail}); }catch(e){} };
+  // a draft sent back to the model with what to fix
+  const pushBack = (draft, why) => {
+    trace('check', 'Sent back: ' + String(why).split(/[.:\n]/)[0].slice(0, 90), {draft: String(draft || '').slice(0, 2000), why: String(why).slice(0, 1500)});
+    messages.push({role: 'assistant', content: draft}, {role: 'user', content: why});
+  };
   const today = new Date().toISOString().slice(0, 10);
   const sources = [];                                             // everything read, numbered as the model sees it
   const numberOf = (url, title, text) => { let s = sources.find(x=>x.url === url); if(!s){ s = {n: sources.length + 1, url, title: title || url, text: ''}; sources.push(s); } if(text) s.text += ' ' + text; return s.n; };
@@ -46,6 +55,7 @@ export async function runAgent(question, o){
   const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o)}].concat(o.history || [], [{role: 'user', content: question + lessons}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = o.isTimely ? o.isTimely(question) : /\b(today|now|latest|current|recent|news|price|rate|score|who is|who won)\b/i.test(question);
+  let runs = 0, lastRun = null, nudgedRun = false, fixes = 0;
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
   const run = async (name, args) => {
@@ -55,6 +65,7 @@ export async function runAgent(question, o){
       searches++;
       const r = await o.search(q, 8);
       usedSearch.add(r.provider || 'search');
+      trace('search', 'Searched: ' + q, {results: r.results.slice(0, 8).map(x=>({title: x.title, url: x.url, date: x.date ? String(x.date).slice(0, 10) : ''})), via: r.provider || ''});
       return r.results.map(x=>`[${numberOf(x.url, x.title, x.snippet)}] ${x.title}${x.date ? ' (' + String(x.date).slice(0, 10) + ')' : ''}\n${x.url}\n${x.snippet}`).join('\n\n') || 'No results.';
     }
     if(name === 'open_page'){
@@ -69,11 +80,13 @@ export async function runAgent(question, o){
       const n = numberOf(page.url || url, page.title, best);
       const years = Array.from(new Set((String(page.content).match(/\b20[0-3]\d\b/g) || []))).sort();
       const when = page.published ? 'published ' + String(page.published).slice(0, 10) : years.length ? 'years mentioned: ' + years.slice(-3).join(', ') : 'date not shown';
+      trace('read', 'Read: ' + (page.title || url).slice(0, 100), {url: page.url || url, when, excerpt: best.slice(0, 1500)});
       return `[${n}] ${page.title} (${when})\n${best.slice(0, 3500)}`;
     }
     if(name === 'calculate'){
       step('🧮 Calculating: ' + String(args.expression).slice(0, 60));
       const r = o.calc(String(args.expression || ''));
+      trace('calc', 'Calculated: ' + String(args.expression || ''), r || 'Could not work that out');
       return r || 'Could not work that out — write it as a plain expression, like (1250+750)/8.';
     }
     if(name === 'market_analysis'){
@@ -83,7 +96,16 @@ export async function runAgent(question, o){
       const a = await o.market(String(args.market || question), tf);
       usedSearch.add('market prices');
       const n = numberOf(a.url, a.name + ' — ' + tf + ' prices, analysed here', a.text);
+      trace('calc', 'Analysed: ' + a.name + ' (' + tf + ')', a.text);
       return `[${n}] ${a.text}`;
+    }
+    if(name === 'run_code'){
+      if(!o.runCode) return 'Running code is not available here.';
+      step('▶️ Running ' + String(args.language || 'code') + ' (try ' + (++runs) + ')');
+      const r = await o.runCode({language: args.language, code: args.code, stdin: args.stdin});
+      lastRun = r;
+      trace('run', 'Ran ' + (r.language || args.language) + ' — ' + (r.ok ? 'worked' : r.exit === 'timeout' ? 'too slow (stopped)' : 'failed'), {lang: r.language || args.language, code: String(args.code || '').slice(0, 6000), output: r.output, ok: r.ok});
+      return (r.ok ? 'It ran (exit 0' : 'It failed (exit ' + r.exit) + (r.ms ? ', ' + r.ms + ' ms' : '') + '). Output:\n' + r.output;
     }
     if(name === 'read_file'){
       const p = path.resolve(String(args.path || ''));
@@ -93,6 +115,7 @@ export async function runAgent(question, o){
       step('📂 Reading file: ' + path.basename(p));
       const text = fs.readFileSync(p, 'utf8').slice(0, 20000);
       const n = numberOf('file://' + p, path.basename(p), text);
+      trace('read', 'Read file: ' + path.basename(p), {excerpt: text.slice(0, 1500)});
       return `[${n}] ${path.basename(p)}\n${text.slice(0, 8000)}`;
     }
     return 'Unknown tool.';
@@ -103,6 +126,7 @@ export async function runAgent(question, o){
     const msg = r.message || {};
     const calls = msg.tool_calls || [];
     if(calls.length && turn < 9){
+      if(String(msg.content || '').trim()) trace('think', 'Thinking', String(msg.content).replace(/<think>|<\/think>/g, '').trim());
       messages.push({role: 'assistant', content: msg.content || '', tool_calls: calls});
       for(const c of calls.slice(0, 3)){
         const fn = c.function || {};
@@ -116,9 +140,9 @@ export async function runAgent(question, o){
     }
     let text = String(msg.content || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
     // a small model sometimes writes the call instead of making it: web_search("…"), {"name": "calculate", …}
-    const written = /^\W*(web_search|open_page|calculate|read_file|market_analysis)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
-      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file|market_analysis)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
-      (()=>{ try{ const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); const a = j.arguments || j.parameters || {}; return j.name && /^(web_search|open_page|calculate|read_file|market_analysis)$/.test(j.name) ? [null, j.name, a.query || a.url || a.expression || a.path || ''] : null; }catch(e){ return null; } })();
+    const written = /^\W*(web_search|open_page|calculate|read_file|market_analysis|run_code)\s*\(\s*(?:\w+\s*=\s*)?["']?([\s\S]*?)["']?\s*\)\W*$/.exec(text) ||
+      (()=>{ const all = Array.from(text.matchAll(/\b(web_search|open_page|calculate|read_file|market_analysis|run_code)\s*\(\s*(?:\w+\s*=\s*)?["']([^"'\n]{1,300})["']\s*\)/g)); return all.length && !/\[\d+\]/.test(text) ? all[all.length - 1] : null; })() ||
+      (()=>{ try{ const j = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)); const a = j.arguments || j.parameters || {}; return j.name && /^(web_search|open_page|calculate|read_file|market_analysis|run_code)$/.test(j.name) ? [null, j.name, a.query || a.url || a.expression || a.path || ''] : null; }catch(e){ return null; } })();
     if(written && written[2] && turn < 9){
       const name = written[1], arg = String(written[2]).trim(), key = {web_search: 'query', open_page: 'url', calculate: 'expression', read_file: 'path', market_analysis: 'market'}[name];
       messages.push({role: 'assistant', content: '', tool_calls: [{function: {name, arguments: {[key]: arg}}}]});
@@ -131,18 +155,32 @@ export async function runAgent(question, o){
     // a question about now, answered from memory: look it up first (once)
     if(!searches && !nudged && timely && turn < 8){
       nudged = true;
-      messages.push({role: 'assistant', content: text}, {role: 'user', content: 'That needs current information. Use web_search to check before answering.'});
+      pushBack(text, 'That needs current information. Use web_search to check before answering.');
       continue;
     }
     // not an answer (a bare expression, a fragment): ask for a proper one
     if((text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
-      messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.'});
+      pushBack(text, 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.');
       continue;
+    }
+    // code: never handed over untested — run it; if the last run failed, fix it and run again (like a programmer)
+    if(o.runCode && turn < 8){
+      const runnable = Array.from(text.matchAll(/```[ \t]*(python3?|py|javascript|js|node|c|cpp|c\+\+)\s*\n([\s\S]*?)```/gi));
+      if(runnable.length && !runs && !nudgedRun){
+        nudgedRun = true;
+        pushBack(text, 'Before you answer, test the program: call run_code with the whole program (use only the standard library unless the user asked for a package). If it fails, fix it and run again. Then give the final code and the real output it printed.');
+        continue;
+      }
+      if(lastRun && !lastRun.ok && fixes < 3 && runs < 5){
+        fixes++;
+        pushBack(text, 'The last run failed (' + lastRun.exit + '):\n' + String(lastRun.output).slice(-1500) + '\nFind the cause, fix the code, and run it again with run_code.');
+        continue;
+      }
     }
     // searched but read nothing: snippets are often old or partial — open a page or two and confirm (once)
     if(searches && !opened && !nudgedOpen && turn < 8){
       nudgedOpen = true;
-      messages.push({role: 'assistant', content: text}, {role: 'user', content: 'Before you answer: open the one or two most relevant result pages with open_page and confirm the facts (snippets can be old or wrong). Then answer.'});
+      pushBack(text, 'Before you answer: open the one or two most relevant result pages with open_page and confirm the facts (snippets can be old or wrong). Then answer.');
       continue;
     }
     // the draft is checked against the rules; what breaks them goes back to the model (twice at most) to fix with its tools
@@ -150,6 +188,7 @@ export async function runAgent(question, o){
     const calcOut = messages.filter(m=>m.role === 'tool' && m.tool_name === 'calculate').map(m=>m.content).join(' ');
     const issues = o.review ? o.review(text, {question, sources, extra: calcOut + ' ' + toolOut, searched: searches > 0, timely}) : [];
     if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
+    trace('check', issues.length ? 'Rules check: ' + issues.length + ' to fix' : 'Rules check: all kept', issues.length ? issues.map(i=>i.rule + ' — ' + i.text).join('\n') : 'Every rule kept.');
     if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues, question); }
     // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
     const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10|R11/.test(i.rule) ? 3 : 1), 0);
@@ -160,10 +199,10 @@ export async function runAgent(question, o){
       revisions++;
       if(dayFacts.length) messages.push({role: 'tool', tool_name: 'calculate', content: dayFacts.join(' ')});
       step('Checking against the rules… ' + best.issues.length + ' to fix');
-      messages.push({role: 'assistant', content: best.text}, {role: 'user', content: 'Your draft breaks these rules:\n' + best.issues.map(i=>'- ' + i.text).join('\n') +
+      pushBack(best.text, 'Your draft breaks these rules:\n' + best.issues.map(i=>'- ' + i.text).join('\n') +
         '\nFix each one: search, open_page or calculate if you need to. If a number or name is not in what you read, open the page that has it or leave it out — never put in a different number you have not read. ' +
         (dayFacts.length ? 'The calculator says: ' + dayFacts.join(' ') + ' Use exactly that count. ' : '') +
-        'Then write the whole answer again, as if for the first time (do not mention a draft or corrections).'});
+        'Then write the whole answer again, as if for the first time (do not mention a draft or corrections).');
       continue;
     }
     text = best.text;
@@ -180,6 +219,7 @@ export async function runAgent(question, o){
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
     return {text, read: sources.filter(s=>!cited.has(s.n) && /^https?:/.test(s.url)).slice(0, 8).map(s=>({i: s.n, title: s.title, url: s.url})), model: (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
       by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
+        (runs ? ' · code run ' + runs + '×' + (lastRun ? (lastRun.ok ? ', last run worked' : ', last run failed') : '') : '') +
         (o.review ? ' · rules: ' + (firstIssues && firstIssues.length ? firstIssues.length + ' caught, ' + Math.max(0, firstIssues.length - issuesLeft.length) + ' fixed' : 'all kept') : ''),
       issues: issuesLeft};
   }

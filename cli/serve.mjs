@@ -60,7 +60,7 @@ export function serve(port){
         const line = x => { try{ res.write(JSON.stringify(x) + '\n'); }catch(e){} };
         const history = (Array.isArray(d.history) ? d.history : []).slice(-6).map(h=>({role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content || '').slice(0, 1500)}));
         const t = Date.now();
-        try{ const out = await B.answer(q, {history, files: [], onStep: s=>line({step: s})}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
+        try{ const out = await B.answer(q, {history, files: [], onStep: s=>line({step: s}), onTrace: t=>line({trace: t})}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
         catch(e){ line({error: String(e.message || e)}); }
         return res.end();
       }catch(e){ return send(500, {error: String(e.message || e)}); }
