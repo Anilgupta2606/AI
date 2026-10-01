@@ -61,6 +61,15 @@ export async function runAgent(question, o){
   const sources = [];                                             // everything read, numbered as the model sees it
   const numberOf = (url, title, text) => { let s = sources.find(x=>x.url === url); if(!s){ s = {n: sources.length + 1, url, title: title || url, text: ''}; sources.push(s); } if(text) s.text += ' ' + text; return s.n; };
   // corrections from before go right with the question (a small model reads what is near the question best)
+  // pictures the user attached: a model that can see describes each one (and reads its text exactly) — that
+  // description is a source like any other, so the answer can still search, calculate and check
+  for(const im of (o.attachments || []).filter(a=>a.image)){
+    if(!o.see){ im.text = '(This picture could not be read here: no model on this Mac can see images.)'; continue; }
+    step('🖼 Looking at ' + im.name);
+    try{ const r = await o.see(im, question); im.text = r.text; trace('read', 'Looked at ' + im.name + ' (' + r.model + ')', {excerpt: r.text.slice(0, 1500)}); }
+    catch(e){ im.text = '(The picture could not be read: ' + e.message + ')'; }
+    im.name = im.name + ' (picture — what it shows)';
+  }
   // files the user attached on the page: each a numbered source; a long one sends the parts that answer the question
   const attached = (o.attachments || []).map(a=>{
     const t = String(a.text || ''), n = numberOf('file://' + a.name, a.name, t.slice(0, 30000));
@@ -156,6 +165,8 @@ export async function runAgent(question, o){
      parallel), and a market question its prices, before the model's first turn — instead of the model asking for
      them one slow turn at a time. They go in as if the model had asked, so everything after works the same. */
   const codeQ = /\b(write|build|create|make|implement|fix|debug)\b[\s\S]{0,40}\b(code|program|script|function|class|app|algorithm)\b|\b(python|javascript|java|c\+\+|sql)\b[\s\S]{0,30}\b(program|code|script|function)\b/i.test(question);
+  // cloud on and a hard question: research here, then the bigger model writes it at once (no slow local draft first)
+  let forceCloud = !!(o.cloud && (/\b(analy[sz]e|analysis|compare|comparison|in detail|pros and cons|strategy|design|architecture|plan|why does|explain how)\b/i.test(question) || codeQ));
   const asTool = async (name, args) => {
     const id = 'pre' + messages.length;
     messages.push({role: 'assistant', content: '', tool_calls: [{id, function: {name, arguments: args}}]});
@@ -169,8 +180,9 @@ export async function runAgent(question, o){
     if(marketQ){
       step('📈 Getting real prices first');
       await asTool('market_analysis', {market: question, timeframe: /\bweek/i.test(question) ? 'week' : /\bhour/i.test(question) ? 'hour' : 'day'});
-      await asTool('web_search', {query: question.replace(/\b(can you|please|do|technical analysis|what you feel|will it|see if)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + ' news today'});
-    } else if(timely && !codeQ && o.search && !off.has('web')){
+      const newsQ = await asTool('web_search', {query: question.replace(/\b(can you|please|do|technical analysis|what you feel|will it|see if)\b/gi, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) + ' news today'});
+      if(forceCloud){ const pick = lastResults.filter(x=>x.url && !/youtube|facebook|instagram|x\.com|twitter/i.test(x.url)).slice(0, 2); await Promise.all(pick.map(x=>run('open_page', {url: x.url}).then(g=>messages.push({role: 'tool', tool_name: 'open_page', content: g})).catch(()=>{}))); }
+    } else if((timely || forceCloud) && !codeQ && o.search && !off.has('web')){
       step('Researching before thinking');
       await asTool('web_search', {query: question});
       const pick = lastResults.filter(x=>x.url && !/youtube\.com|youtu\.be|facebook\.com|instagram\.com|x\.com|twitter\.com|tiktok\.com|\.pdf$/i.test(x.url)).slice(0, 2);
@@ -185,7 +197,8 @@ export async function runAgent(question, o){
   for(let turn = 0; turn < 10; turn++){
     step(turn ? 'Thinking about what it found…' : 'Thinking…');
     // the answer as it is written (a turn that ends in a tool call is not the answer: the page drops it)
-    const r = await o.chat(messages, tools, {onDelta: t => { try{ o.onDraft && o.onDraft(t); }catch(e){} }});
+    if(forceCloud) step('Handing it to the bigger model');
+    const r = forceCloud ? {message: {role: 'assistant', content: ''}, model: 'cloud'} : await o.chat(messages, tools, {onDelta: t => { try{ o.onDraft && o.onDraft(t); }catch(e){} }});
     const msg = r.message || {};
     const calls = msg.tool_calls || [];
     if(calls.length && turn < 9){
@@ -226,18 +239,18 @@ export async function runAgent(question, o){
     }
     if(!text && best) text = best.text;                            // out of steps mid-fix: the best draft so far stands
     // a question about now, answered from memory: look it up first (once)
-    if(!searches && !nudged && timely && turn < 8){
+    if(!forceCloud && !searches && !nudged && timely && turn < 8){
       nudged = true;
       pushBack(text, 'That needs current information. Use web_search to check before answering.');
       continue;
     }
     // not an answer (a bare expression, a fragment): ask for a proper one
-    if((text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
+    if(!forceCloud && (text.length < 25 || /^[\d\s()+\-−×*/.,a-z^=]{0,80}$/i.test(text) && !/[.!?]$/.test(text)) && turn < 8){
       pushBack(text, 'Please finish: use calculate if you need a sum or a day count, then answer in a full sentence.');
       continue;
     }
     // code: never handed over untested — run it; if the last run failed, fix it and run again (like a programmer)
-    if(o.runCode && turn < 8){
+    if(!forceCloud && o.runCode && turn < 8){
       const runnable = Array.from(text.matchAll(/```[ \t]*(python3?|py|javascript|js|node|c|cpp|c\+\+)\s*\n([\s\S]*?)```/gi));
       const madeUp = !runs && /\*\*output|^output:|output when run|it prints/im.test(text) && /```/.test(text);
       if((runnable.length || madeUp) && !runs && !nudgedRun){
@@ -252,7 +265,7 @@ export async function runAgent(question, o){
       }
     }
     // searched but read nothing: snippets are often old or partial — open a page or two and confirm (once)
-    if(searches && !opened && !nudgedOpen && turn < 8){
+    if(!forceCloud && searches && !opened && !nudgedOpen && turn < 8){
       nudgedOpen = true;
       pushBack(text, 'Before you answer: open the one or two most relevant result pages with open_page and confirm the facts (snippets can be old or wrong). Then answer.');
       continue;
@@ -260,12 +273,12 @@ export async function runAgent(question, o){
     // the draft is checked against the rules; what breaks them goes back to the model (twice at most) to fix with its tools
     const toolOut = messages.filter(m=>m.role === 'tool').map(m=>m.content).join(' ');
     const calcOut = messages.filter(m=>m.role === 'tool' && m.tool_name === 'calculate').map(m=>m.content).join(' ');
-    const issues = o.review ? o.review(text, {question, sources, extra: calcOut + ' ' + toolOut, searched: searches > 0, timely}) : [];
+    const issues = forceCloud || !o.review ? [] : o.review(text, {question, sources, extra: calcOut + ' ' + toolOut, searched: searches > 0, timely});
     if(process.env.MONEY_AI_DEBUG) console.error('\n--- draft:\n' + text + '\n--- issues: ' + JSON.stringify(issues) + '\n--- sources: ' + sources.map(s=>'[' + s.n + '] ' + s.text.length + ' chars ' + s.url).join('\n'));
     trace('check', issues.length ? 'Rules check: ' + issues.length + ' to fix' : 'Rules check: all kept', issues.length ? issues.map(i=>i.rule + ' — ' + i.text).join('\n') : 'Every rule kept.');
     if(!firstIssues){ firstIssues = issues; if(issues.length && o.remember) o.remember(issues, question); }
     // a rewrite is kept only if it breaks fewer rules than the best draft so far (a small model can "fix" a right number into a wrong one)
-    const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R8|R10|R11/.test(i.rule) ? 3 : 1), 0);
+    const weight = list => list.reduce((t, i)=>t + (/R3|R4|R5|R6|R7|R10|R11/.test(i.rule) ? 3 : 1), 0);
     if(!best || weight(issues) < weight(best.issues)) best = {text, issues};
     // a day count is never left to the model: the calculator works it out for each date in the answer
     const dayFacts = best.issues.some(i=>i.rule === 'R6') && o.datesIn ? Array.from(new Set(o.datesIn(best.text).map(d=>d.toISOString().slice(0, 10)))).filter(d=>d > today).slice(0, 2).map(d=>o.calc('days from today to ' + d)).filter(Boolean) : [];
@@ -296,8 +309,9 @@ export async function runAgent(question, o){
         const found = sources.slice(0, 10).map(x=>`[${x.n}] ${x.title} — ${x.url}\n${String(x.text).slice(0, 1600)}`).join('\n\n');
         const work = messages.filter(m=>m.role === 'tool' && /calculate|market_analysis|run_code/.test(m.tool_name || '')).map(m=>m.tool_name + ':\n' + String(m.content).slice(0, 2500)).join('\n\n');
         const sys = SYSTEM(today).replace(/Work like a careful researcher:[\s\S]*$/, '') + '\nWrite the final answer to the question from the research below (gathered just now on the user\'s Mac). Mark facts from a source with its number like [3]; use only numbers from the research or the work shown. For code: one complete, working program in a fenced block with its language, then how to run it.' + RULEBOOK(o);
-        let turns = (o.history || []).concat([{role: 'user', content: 'Question: ' + question + '\n\nResearch:\n' + (found || '(none)') + (work ? '\n\nWork done here:\n' + work : '') + '\n\nThe small model\'s draft (improve on it, do not mention it):\n' + text.slice(0, 3000)}]);
-        let c = await o.cloud(sys, turns), ctext = String(c.text || '').trim();
+        let turns = (o.history || []).concat([{role: 'user', content: 'Question: ' + question + '\n\nResearch:\n' + (found || '(none)') + (work ? '\n\nWork done here:\n' + work : '') + (text ? '\n\nThe small model\'s draft (improve on it, do not mention it):\n' + text.slice(0, 3000) : '')}]);
+        const tidyCites = t => String(t || '').replace(/【(\d+)(?:†[^】]*)?】/g, '[$1]').trim();
+        let c = await o.cloud(sys, turns), ctext = tidyCites(c.text);
         // its code, run here; an error goes back to it (twice at most)
         for(let k = 0; k < 2 && o.runCode && codeQ; k++){
           const m = /```[ \t]*(python3?|py|javascript|js|c|cpp|c\+\+)\s*\n([\s\S]*?)```/i.exec(ctext);
@@ -308,13 +322,15 @@ export async function runAgent(question, o){
           lastRun = rr; runs++;
           if(rr.ok){ if(!/output/i.test(ctext)) ctext += '\n\n**Output when run here:**\n```\n' + rr.output.slice(0, 1500) + '\n```'; break; }
           turns = turns.concat([{role: 'assistant', content: ctext}, {role: 'user', content: 'It failed when run:\n' + rr.output.slice(-1500) + '\nFix it; reply with the whole corrected answer.'}]);
-          c = await o.cloud(sys, turns); ctext = String(c.text || '').trim();
+          c = await o.cloud(sys, turns); ctext = tidyCites(c.text);
         }
         const cIssues = o.review ? o.review(ctext, {question, sources, extra: messages.filter(m=>m.role === 'tool').map(m=>m.content).join(' ') + ' ' + ctext.match(/```[\s\S]*?```/g), searched: searches > 0, timely}) : [];
         trace('think', 'Bigger model (' + c.provider + ' · ' + c.model + ') wrote the answer', ctext.slice(0, 3000));
-        if(ctext && weight(cIssues) <= weight(issuesLeft)){ text = ctext; issuesLeft.length = 0; cIssues.forEach(i=>issuesLeft.push(i)); cloudBy = c.provider + ' · ' + c.model; }
-      }catch(e){ trace('check', 'The bigger model could not answer: ' + e.message, ''); }
+        if(ctext && (forceCloud || weight(cIssues) <= weight(issuesLeft))){ text = ctext; issuesLeft.length = 0; cIssues.forEach(i=>issuesLeft.push(i)); cloudBy = c.provider + ' · ' + c.model; }
+        else trace('check', 'Kept the small model\'s answer: the bigger model\'s broke more rules', cIssues.map(i=>i.rule + ' — ' + i.text).join('\n'));
+      }catch(e){ trace('check', 'The bigger model could not answer: ' + e.message, ''); step('Bigger model unavailable: ' + e.message); }
     }
+    if(forceCloud && !cloudBy){ forceCloud = false; best = null; firstIssues = null; step('Writing it on this Mac instead'); continue; }
     // TRUST BUT VERIFY: the code in the answer is run here before it is shown; any "Output" it claims is replaced by
     // what really printed (a small model sometimes writes output it never ran)
     if(o.runCode && !(o.disabled || []).includes('code')){
@@ -349,7 +365,7 @@ export async function runAgent(question, o){
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
     if(cloudBy) step('Written by ' + cloudBy);
     return {text, chart: lastChart, read: sources.filter(s=>!cited.has(s.n) && /^https?:/.test(s.url)).slice(0, 8).map(s=>({i: s.n, title: s.title, url: s.url})), model: cloudBy ? cloudBy + ' (cloud), research on this Mac' : (r.model || 'local model') + ' (on this Mac)', sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
-      by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
+      by: (cloudBy ? cloudBy + ' (cloud), researched' : (r.model || 'local model')) + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '') +
         (runs ? ' · code run ' + runs + '×' + (lastRun ? (lastRun.ok ? ', last run worked' : ', last run failed') : '') : '') +
         (o.review ? ' · rules: ' + (firstIssues && firstIssues.length ? firstIssues.length + ' caught, ' + Math.max(0, firstIssues.length - issuesLeft.length) + ' fixed' : 'all kept') : ''),
       issues: issuesLeft};

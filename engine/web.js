@@ -563,7 +563,9 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     if(c.sources && c.sources.length){
       const q = String(c.question || '').toLowerCase();
       // headings and bold labels ("**Conclusion**:", "## Market Context") are not names, nor a lone capitalised word opening a sentence
-      const prose = bare.replace(/^\s*#{1,6}\s.*$/gm, ' ').replace(/\*\*[^*\n]{1,60}\*\*\s*:/g, ' ').replace(/^\s*[-*•]?\s*[A-Z][\w ]{1,40}:/gm, ' ');
+      // also: a bold line on its own ("**Overview**"), a bold label opening a list item ("- **Builds** discipline"), a list item's first word
+      const prose = bare.replace(/^\s*\|.*$/gm, ' ').replace(/^\s*#{1,6}\s.*$/gm, ' ').replace(/\*\*[^*\n]{1,60}\*\*\s*:/g, ' ').replace(/^\s*[-*•]?\s*[A-Z][\w ]{1,40}:/gm, ' ')
+        .replace(/^\s*\*\*[^*\n]{1,80}\*\*\s*$/gm, ' ').replace(/^(\s*(?:[-*•]|\d+[.)])\s*)\*\*[^*\n]{1,60}\*\*/gm, '$1').replace(/^(\s*(?:[-*•]|\d+[.)])\s+)[A-Z][a-z]+/gm, '$1');
       const names = Array.from(new Set(Array.from(prose.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g))
         .filter(m=>m[0].includes(' ') || !/(^|[.!?:;]\s*|\n\s*(?:[-*•]\s*)?|\(\s*)$/.test(prose.slice(0, m.index)))
         .map(m=>m[0]).filter(w=>!COMMON.has(w.split(' ')[0]) && !q.includes(w.toLowerCase()))));

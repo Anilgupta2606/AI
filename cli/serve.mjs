@@ -18,7 +18,7 @@ import {fileURLToPath} from 'url';
 import * as Local from './local.mjs';
 const UI = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ui.html');
 const brain = () => import('./ai.mjs');                         // the terminal's own answer, loaded when first asked
-const body = req => new Promise((res, rej)=>{ let b = ''; req.on('data', c=>{ b += c; if(b.length > 2e6){ rej(new Error('Too long')); req.destroy(); } }); req.on('end', ()=>{ try{ res(JSON.parse(b || '{}')); }catch(e){ rej(new Error('Not JSON')); } }); });
+const body = req => new Promise((res, rej)=>{ let b = ''; req.on('data', c=>{ b += c; if(b.length > 3e7){ rej(new Error('Too long')); req.destroy(); } }); req.on('end', ()=>{ try{ res(JSON.parse(b || '{}')); }catch(e){ rej(new Error('Not JSON')); } }); });
 
 const PORT = +process.env.MONEY_AI_PORT || 8899;
 const ALLOWED = [/^https:\/\/anilgupta2606\.github\.io$/, /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/];
@@ -43,11 +43,13 @@ export function serve(port){
     const samePage = req.headers['sec-fetch-site'] === 'same-origin';
     if(u.pathname !== '/health' && !samePage && !ALLOWED.some(r=>r.test(origin))) return send(403, {error: 'Not allowed.'});
     // the AI itself: only from the page above (not other sites)
-    if(['/ask', '/teach', '/forget', '/learned', '/brain', '/warm', '/feedback', '/connectors', '/rule', '/remember', '/keys'].includes(u.pathname)){
+    if(['/ask', '/teach', '/forget', '/learned', '/brain', '/warm', '/feedback', '/connectors', '/rule', '/remember', '/keys', '/sessions', '/session'].includes(u.pathname)){
       try{
         const B = await brain();
         if(u.pathname === '/learned') return send(200, B.learned());
         if(u.pathname === '/warm') return send(200, {ok: await B.warm()});
+        if(u.pathname === '/sessions') return send(200, {list: B.listSessions()});
+        if(u.pathname === '/session' && req.method === 'GET'){ const x = B.loadSession(u.searchParams.get('id')); return x ? send(200, x) : send(404, {error: 'No such chat.'}); }
         if(u.pathname === '/keys' && req.method === 'GET') return send(200, {cloud: B.cloudNames()});
         if(u.pathname === '/connectors' && req.method === 'GET') return send(200, {list: B.getConnectors(), presets: B.PRESETS});
         if(u.pathname === '/brain' && req.method === 'GET') return send(200, B.brainExport());
@@ -59,6 +61,7 @@ export function serve(port){
         if(u.pathname === '/feedback') return send(200, B.feedback(d));
         if(u.pathname === '/connectors') return send(200, {list: B.saveConnectors(d.list)});
         if(u.pathname === '/rule') return send(200, {ok: B.addRule(d.text)});
+        if(u.pathname === '/session') return send(200, d.delete ? {ok: B.deleteSession(d.id)} : {id: B.saveSession(d)});
         if(u.pathname === '/keys' && req.method === 'POST') return send(200, {saved: B.saveKeys(d.keys)});
         if(u.pathname === '/remember') return send(200, {ok: B.remember(d.text)});
         // /ask: steps as they happen, then the answer — one JSON object per line
@@ -70,7 +73,8 @@ export function serve(port){
         const t = Date.now();
         try{ const out = await B.answer(q, {history, files: [], fresh: !!d.fresh, goal: String(d.goal || '').slice(0, 400),
           disabled: (Array.isArray(d.disabled) ? d.disabled : []).filter(x=>/^(web|read|calc|market|code|connectors)$/.test(x)),
-          attachments: (Array.isArray(d.attachments) ? d.attachments : []).slice(0, 5).map(a=>({name: String(a && a.name || 'file').replace(/[\\/]/g, '_').slice(0, 120), text: String(a && a.text || '').slice(0, 300000)})).filter(a=>a.text.trim()), cloudKeys: d.cloud && d.cloud.keys && typeof d.cloud.keys === 'object' && Object.keys(d.cloud.keys).length ? d.cloud.keys : null, cloud: !!d.cloud, onStep: s=>line({step: s}), onTrace: t=>line({trace: t}), onDraft: (()=>{ let at = 0; return t=>{ if(Date.now() - at > 150){ at = Date.now(); line({draft: String(t).slice(-6000)}); } }; })()}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
+          attachments: (Array.isArray(d.attachments) ? d.attachments : []).slice(0, 40).map(a=>({name: String(a && a.name || 'file').slice(0, 160), text: String(a && a.text || '').slice(0, 300000),
+            image: a && typeof a.image === 'string' && /^[A-Za-z0-9+/=]+$/.test(a.image.slice(0, 200)) ? a.image.slice(0, 12e6) : undefined})).filter(a=>a.text.trim() || a.image), cloudKeys: d.cloud && d.cloud.keys && typeof d.cloud.keys === 'object' && Object.keys(d.cloud.keys).length ? d.cloud.keys : null, cloud: !!d.cloud, onStep: s=>line({step: s}), onTrace: t=>line({trace: t}), onDraft: (()=>{ let at = 0; return t=>{ if(Date.now() - at > 150){ at = Date.now(); line({draft: String(t).slice(-6000)}); } }; })()}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
         catch(e){ line({error: String(e.message || e)}); }
         return res.end();
       }catch(e){ return send(500, {error: String(e.message || e)}); }

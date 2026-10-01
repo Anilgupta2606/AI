@@ -175,6 +175,15 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .btn{background:var(--ink); color:var(--page); border:0; border-radius:12px; padding:9px 16px; font-weight:600; cursor:pointer}
 .clip{width:38px; height:38px; border:0; background:none; color:var(--mut); border-radius:12px; cursor:pointer; display:grid; place-items:center; flex:none; align-self:flex-end}
 .clip:hover{background:var(--page); color:var(--ink)}
+.box{position:relative}
+.attachMenu{position:absolute; left:8px; bottom:calc(100% + 8px); background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); padding:6px; width:270px; z-index:8}
+.attachMenu button{display:flex; gap:12px; align-items:center; width:100%; border:0; background:none; padding:9px 10px; border-radius:11px; cursor:pointer; text-align:left}
+.attachMenu button:hover{background:var(--page)}
+.attachMenu i{font-style:normal; font-size:18px; width:34px; height:34px; display:grid; place-items:center; background:var(--page); border-radius:10px}
+.attachMenu b{display:block; font-size:14px} .attachMenu small{color:var(--mut); font-size:12px}
+@media (hover:hover) and (pointer:fine){ .phoneOnly{display:none!important} }
+.fchip img{width:24px; height:24px; object-fit:cover; border-radius:6px}
+.q .thumbs{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap} .q .thumbs img{width:64px; height:64px; object-fit:cover; border-radius:10px; border:2px solid rgb(255 255 255 / .3)}
 .files{max-width:800px; margin:0 auto 8px; display:flex; flex-wrap:wrap; gap:6px}
 .fchip{display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 6px 4px 12px; font-size:13px; box-shadow:var(--shadow)}
 .fchip small{color:var(--mut)} .fchip button{border:0; background:var(--page); border-radius:50%; width:20px; height:20px; cursor:pointer; color:var(--ink2); line-height:1}
@@ -224,6 +233,10 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .sw .x{margin-left:auto}
 .cform{display:flex; flex-direction:column; gap:8px; margin-top:10px}
 .cform input{background:var(--page); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px}
+.chat{display:flex; gap:10px; align-items:center; padding:10px 12px; border-radius:14px; cursor:pointer; border:1px solid transparent}
+.chat:hover{background:var(--page)} .chat.cur{border-color:var(--think); background:var(--think-bg)}
+.chat .ct{flex:1; min-width:0} .chat .ct b{display:block; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap} .chat .ct small{color:var(--mut); font-size:12px}
+.chat .del{border:0; background:none; color:var(--mut); cursor:pointer; font-size:16px; padding:2px 6px; border-radius:8px} .chat .del:hover{color:var(--check); background:var(--check-bg)}
 .toast{position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:var(--ink); color:var(--page); border-radius:999px; padding:9px 18px; font-size:14px; font-weight:600; z-index:30; box-shadow:var(--shadow); max-width:90vw}
 
 /* what it has learned */
@@ -249,6 +262,7 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 <header><div class="bar">
   <div class="brand"><div class="orb" id="orb"></div>AI</div>
   <div class="where"><span class="pill" id="stWhere"><i></i>Starting</span><span class="pill" id="stSearch" hidden></span><span class="pill model" id="stModel" hidden></span></div>
+  <button class="learnedBtn ghosty" id="openChats" title="Your past chats">Chats</button>
   <button class="learnedBtn ghosty" id="openConn" title="What it can use">Connectors</button>
   <button class="learnedBtn" id="openLearned">Learned</button>
   <div class="acct">
@@ -300,13 +314,29 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
   <form class="box" id="form">
     <button class="clip" type="button" id="clip" aria-label="Attach a file" title="Attach files: PDF, text, CSV, JSON, code"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/></svg></button>
     <input type="file" id="fileIn" multiple hidden accept=".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.log,.yaml,.yml,.ini,.js,.mjs,.ts,.py,.java,.c,.cpp,.h,.sql,.sh,.css">
+    <input type="file" id="folderIn" hidden webkitdirectory multiple>
+    <input type="file" id="imageIn" hidden multiple accept="image/*">
+    <input type="file" id="cameraIn" hidden accept="image/*" capture="environment">
+    <div class="attachMenu" id="attachMenu" hidden role="menu">
+      <button type="button" data-in="fileIn" role="menuitem"><i>📄</i><span><b>Files</b><small>PDF, text, CSV, JSON, code</small></span></button>
+      <button type="button" data-in="folderIn" role="menuitem"><i>🗂</i><span><b>Folder</b><small>Its text and code files (up to 40)</small></span></button>
+      <button type="button" data-in="imageIn" role="menuitem"><i>🖼</i><span><b>Images</b><small>Photos, screenshots, receipts, charts</small></span></button>
+      <button type="button" data-in="cameraIn" role="menuitem" class="phoneOnly"><i>📷</i><span><b>Take a photo</b><small>With the camera</small></span></button>
+    </div>
     <textarea id="q" rows="1" placeholder="Ask anything…  (type / for commands)" aria-label="Your question"></textarea>
     <button class="send" id="ask" aria-label="Ask"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
   </form>
-  <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><button class="link" id="clear" type="button">New conversation</button></div>
+  <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><button class="link" id="clear" type="button">New chat</button></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
+<aside class="panel" id="chatsPanel" aria-label="Your chats">
+  <button class="ghost close" id="closeChats">Close</button>
+  <h2>Chats</h2>
+  <p class="sub">Every conversation is kept. Open one to carry on where you left off — on this Mac, chats from the terminal (ai --resume) are here too.</p>
+  <button class="btn wide" id="newChat" type="button" style="margin:14px 0 4px">New chat</button>
+  <div id="chats"></div>
+</aside>
 <aside class="panel" id="connPanel" aria-label="Connectors">
   <button class="ghost close" id="closeConn">Close</button>
   <h2>Connectors</h2>
@@ -432,7 +462,7 @@ const slim = traces => (traces || []).slice(0, 40).map(t=>{ const d = t.detail; 
 function turnEl(q, files){
   const el = document.createElement('section');
   el.className = 'turn';
-  el.innerHTML = `<div class="q"><div>${esc(q)}${files && files.length ? `<span class="att">📎 ${files.map(f=>esc(f.name)).join(', ')}</span>` : ''}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="wbody"><div class="steps"></div><div class="live"></div><div class="draft" hidden></div></div></div><div class="slot"></div>`;
+  el.innerHTML = `<div class="q"><div>${esc(q)}${files && files.some(f=>f.thumb) ? `<span class="thumbs">${files.filter(f=>f.thumb).map(f=>`<img src="${f.thumb}" alt="${esc(f.name)}">`).join('')}</span>` : ''}${files && files.some(f=>!f.thumb) ? `<span class="att">📎 ${files.filter(f=>!f.thumb).length > 3 ? files.filter(f=>!f.thumb).length + ' files' : files.filter(f=>!f.thumb).map(f=>esc(f.name)).join(', ')}</span>` : ''}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="wbody"><div class="steps"></div><div class="live"></div><div class="draft" hidden></div></div></div><div class="slot"></div>`;
   $('#turns').appendChild(el);
   $('#hello').hidden = true;
   return el;
@@ -474,7 +504,7 @@ async function ask(q, opt){
   opt = opt || {};
   q = q.trim();
   if(!q || busy) return;
-  const files = attachments.filter(a=>a.text && !a.busy).map(a=>({name: a.name, text: a.text}));
+  const files = attachments.filter(a=>!a.busy && (a.text || a.image)).map(a=>a.image ? {name: a.name, image: a.image, thumb: a.thumb} : {name: a.name, text: a.text});
   attachments = []; showFiles();
   busy = true; $('#ask').disabled = true; $('#q').value = ''; grow(); $('#orb').classList.add('busy');
   const el = turnEl(q, files), box = el.querySelector('.steps'), live = el.querySelector('.live'), steps = [], traces = [];
@@ -492,8 +522,9 @@ async function ask(q, opt){
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
     finish(el, q, out, steps, traces);
     history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart}, steps, traces: slim(traces)});
-    history = history.slice(-20).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
+    history = history.slice(-40).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
     store.set('moneyai.history', history);
+    saveChat();
   };
   try{
     await ready;
@@ -504,7 +535,7 @@ async function ask(q, opt){
       out.secs = Math.round((Date.now() - t0) / 1000);
       done(out);
     } else {
-      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns, cloud: cloudKeys(), fresh: !!opt.fresh, attachments: files, goal, disabled})});
+      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns, cloud: cloudKeys(), fresh: !!opt.fresh, attachments: files.map(f=>f.image ? {name: f.name, image: f.image} : f), goal, disabled})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'It answered ' + r.status);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '', out = null;
@@ -586,7 +617,12 @@ async function browserAnswer(q, turns, step){
   let quick = null;
   try{ quick = await MoneyWeb.answer(q, {factsOnly: !!(relayCfg && relayCfg.url)}); }catch(e){}
   if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick);
-  const extra = opt_files.map(f=>({title: f.name, url: 'file://' + f.name, text: f.text.slice(0, 60000)}));
+  for(const f of opt_files.filter(f=>f.image)){
+    step('🖼 Looking at ' + f.name);
+    try{ const r = await MoneyAI.chat('Describe this picture in detail so someone who cannot see it can answer the question. Copy any text, numbers, labels, tables or code exactly. Do not guess what is not visible.', [{role: 'user', content: 'The question: ' + q}], {images: [{mime: 'image/jpeg', b64: f.image}]}); f.text = r.text; f.name += ' (picture, read by ' + r.provider + ')'; }
+    catch(e){ f.text = '(This picture could not be read here: ' + e.message + ')'; }
+  }
+  const extra = opt_files.map(f=>({title: f.name, url: 'file://' + f.name, text: String(f.text || '').slice(0, 60000)}));
   let chart = null;
   // a market question: real prices through your relay, analysed here (the same code as on the Mac)
   if(relayCfg && relayCfg.url && relayCfg.token && /\b(stock|stocks|share|shares|market|markets|nifty|sensex|bank nifty|bitcoin|btc|ethereum|crypto|gold price|silver price|crude|index|technical analysis)\b/i.test(q)){
@@ -665,9 +701,9 @@ document.querySelectorAll('.tries button').forEach(b=>b.onclick = () => ask(b.da
 const openPanel = on => { $('#panel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadLearned(); };
 $('#openLearned').onclick = () => openPanel(true);
 $('#closeLearned').onclick = () => openPanel(false);
-$('#scrim').onclick = () => { openPanel(false); openConn(false); };
-document.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ openPanel(false); openConn(false); } });
-$('#clear').onclick = () => { history = []; store.set('moneyai.history', []); $('#turns').innerHTML = ''; $('#hello').hidden = false; };
+$('#scrim').onclick = () => { openPanel(false); openConn(false); openChats(false); };
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ openPanel(false); openConn(false); openChats(false); } });
+$('#clear').onclick = () => newChat();
 /* ---------------------------------------------------------------- files you attach: read here, in this browser
    (text as it is; a PDF's text with Mozilla's pdf.js), then sent with the question as numbered sources */
 let attachments = [];
@@ -681,12 +717,49 @@ async function pdfText(file){
 }
 function showFiles(){
   const box = $('#files'); box.hidden = !attachments.length;
-  box.innerHTML = attachments.map((a, i)=>`<span class="fchip${a.busy ? ' busy' : ''}">📄 ${esc(a.name)} <small>${a.busy ? 'reading…' : a.err ? esc(a.err) : Math.round(a.text.length / 1000) + 'k chars'}</small><button type="button" data-i="${i}" aria-label="Remove">×</button></span>`).join('');
+  box.innerHTML = attachments.map((a, i)=>`<span class="fchip${a.busy ? ' busy' : ''}">${a.thumb ? `<img src="${a.thumb}" alt="">` : a.image !== undefined ? '🖼' : '📄'} ${esc(a.name.length > 40 ? '…' + a.name.slice(-38) : a.name)} <small>${a.busy ? 'reading…' : a.err ? esc(a.err) : a.image ? 'picture' : Math.max(1, Math.round(a.text.length / 1000)) + 'k chars'}</small><button type="button" data-i="${i}" aria-label="Remove">×</button></span>`).join('');
   box.querySelectorAll('button').forEach(b=>b.onclick = () => { attachments.splice(+b.dataset.i, 1); showFiles(); });
 }
-$('#clip').onclick = () => $('#fileIn').click();
+const attachMenu = on => { $('#attachMenu').hidden = !on; };
+$('#clip').onclick = e => { e.stopPropagation(); attachMenu($('#attachMenu').hidden); };
+document.querySelectorAll('#attachMenu [data-in]').forEach(b=>b.onclick = () => { attachMenu(false); $('#' + b.dataset.in).click(); });
+document.addEventListener('click', e=>{ if(!$('#attachMenu').hidden && !e.target.closest('#attachMenu') && !e.target.closest('#clip')) attachMenu(false); });
+// pictures: made smaller here (at most 1600 px, JPEG) before they are sent
+async function shrink(file){
+  const url = URL.createObjectURL(file);
+  try{
+    const img = await new Promise((res, rej)=>{ const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('not an image this browser can open')); i.src = url; });
+    const k = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    const data = c.toDataURL('image/jpeg', 0.85);
+    return {b64: data.split(',')[1], thumb: c.width > 96 ? (()=>{ const t = document.createElement('canvas'), q = 96 / Math.max(c.width, c.height); t.width = Math.round(c.width * q); t.height = Math.round(c.height * q); t.getContext('2d').drawImage(c, 0, 0, t.width, t.height); return t.toDataURL('image/jpeg', 0.7); })() : data};
+  }finally{ URL.revokeObjectURL(url); }
+}
+async function addImages(files){
+  for(const f of Array.from(files).slice(0, Math.max(0, 8 - attachments.length))){
+    const a = {name: f.name || 'photo.jpg', text: '', image: null, busy: true}; attachments.push(a); showFiles();
+    try{ if(f.size > 30e6) throw new Error('too big'); const r = await shrink(f); a.image = r.b64; a.thumb = r.thumb; }catch(e){ a.err = String(e.message || e).slice(0, 40); }
+    a.busy = false; showFiles();
+  }
+  attachments = attachments.filter(a=>!a.err || a.busy); setTimeout(showFiles, 2500);
+}
+$('#imageIn').onchange = () => { addImages($('#imageIn').files); $('#imageIn').value = ''; };
+$('#cameraIn').onchange = () => { addImages($('#cameraIn').files); $('#cameraIn').value = ''; };
+// a folder: its text and code files (not node_modules, .git or build output), up to 40 files and 1.5 MB
+const TEXTY = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|ya?ml|ini|toml|js|mjs|cjs|ts|tsx|jsx|py|java|kt|c|h|cpp|hpp|cs|go|rs|rb|php|swift|sql|sh|css|scss|vue|svelte)$/i;
+$('#folderIn').onchange = async () => {
+  const files = Array.from($('#folderIn').files).filter(f=>TEXTY.test(f.name) && !/(^|\/)(node_modules|\.git|dist|build|\.next|venv|__pycache__)\//.test(f.webkitRelativePath || '') && f.size < 400000);
+  let total = 0; const pickF = [];
+  for(const f of files){ if(pickF.length >= 40 || total + f.size > 1.5e6) break; pickF.push(f); total += f.size; }
+  if(!pickF.length){ toast('No text or code files in that folder'); $('#folderIn').value = ''; return; }
+  for(const f of pickF){ const a = {name: f.webkitRelativePath || f.name, text: '', busy: true}; attachments.push(a); try{ a.text = await f.text(); }catch(e){ a.err = 'unreadable'; } a.busy = false; }
+  showFiles(); toast(pickF.length + ' file' + (pickF.length === 1 ? '' : 's') + ' from the folder' + (files.length > pickF.length ? ' (of ' + files.length + ')' : ''));
+  $('#folderIn').value = '';
+};
 $('#fileIn').onchange = async () => {
-  for(const f of Array.from($('#fileIn').files).slice(0, 5 - attachments.length)){
+  for(const f of Array.from($('#fileIn').files).slice(0, 10 - attachments.length)){
+    if(/^image\//.test(f.type)){ await addImages([f]); continue; }
     const a = {name: f.name, text: '', busy: true}; attachments.push(a); showFiles();
     try{
       if(f.size > 25e6) throw new Error('too big');
@@ -710,7 +783,8 @@ const COMMANDS = [
   {c: '/file', a: '', d: 'Attach a file (PDF, text, CSV, code)'},
   {c: '/cloud', a: 'on | off', d: 'Let a bigger cloud model write the hard answers'},
   {c: '/theme', a: 'auto | light | dark', d: 'Change the look'},
-  {c: '/new', a: '', d: 'Start a new conversation'},
+  {c: '/chats', a: '', d: 'Your past chats — open one to carry on (also /resume)'},
+  {c: '/new', a: '', d: 'Start a new chat (the last one stays in Chats)'},
   {c: '/help', a: '', d: 'Show all commands'},
 ];
 let slashSel = 0;
@@ -747,7 +821,8 @@ async function runCommand(line){
   else if(c === '/file') $('#fileIn').click();
   else if(c === '/cloud'){ const on = !/^off$/i.test(arg); store.set('ai.cloud', on); $('#cloudTog').checked = on; toast('Cloud AI for hard questions: ' + (on ? 'on' : 'off')); }
   else if(c === '/theme'){ const t = /^(light|dark)$/i.test(arg) ? arg.toLowerCase() : 'auto'; store.set('ai.theme', t); applyTheme(t); toast('Theme: ' + t); }
-  else if(c === '/new') $('#clear').click();
+  else if(c === '/new') newChat();
+  else if(c === '/chats' || c === '/resume') openChats(true);
   else if(c === '/help'){ const el = turnEl('/help'); finish(el, '/help', {text: COMMANDS.map(x=>'- `' + x.c + (x.a ? ' ' + x.a : '') + '` — ' + x.d).join('\n'), model: 'Commands', by: 'Type / in the box to see these'}, []); }
   else { toast('No such command — type / to see them'); return true; }
   return true;
@@ -760,6 +835,63 @@ $('#q').addEventListener('keydown', e=>{
   else if((e.key === 'Tab' || e.key === 'Enter') && list[slashSel] && !/\s/.test($('#q').value)){ e.preventDefault(); e.stopImmediatePropagation(); pickCommand(list[slashSel].c); }
   else if(e.key === 'Escape'){ $('#slash').hidden = true; }
 }, true);
+
+/* ---------------------------------------------------------------- chats: every conversation kept, to come back to
+   On the Mac they are kept by the helper (~/.money-ai/sessions, shared with the terminal's ai --resume); elsewhere in
+   this browser (the newest 30). */
+const newId = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + '-' + Math.random().toString(36).slice(2, 6);
+let sessionId = store.get('ai.session', '') || newId(); store.set('ai.session', sessionId);
+const localChats = () => store.get('ai.sessions', {});
+async function saveChat(){
+  if(!history.length) return;
+  const x = {id: sessionId, title: history[0].q, goal, source: 'page', turns: history};
+  if(mode === 'mac'){ try{ await post('/session', x); return; }catch(e){} }
+  const all = localChats(); all[sessionId] = Object.assign({}, x, {updated: new Date().toISOString(), created: (all[sessionId] || {}).created || new Date().toISOString(),
+    turns: history.map((h, i, a)=>i < a.length - 8 ? Object.assign({}, h, {traces: []}) : h)});
+  const keep = Object.values(all).sort((a, b)=>String(b.updated).localeCompare(String(a.updated))).slice(0, 30);
+  store.set('ai.sessions', Object.fromEntries(keep.map(c=>[c.id, c])));
+}
+async function listChats(){
+  if(mode === 'mac'){ try{ return (await fetch(HELPER + '/sessions').then(r=>r.json())).list || []; }catch(e){} }
+  return Object.values(localChats()).map(c=>({id: c.id, title: c.title, source: 'page', updated: c.updated, turns: (c.turns || []).length})).sort((a, b)=>String(b.updated).localeCompare(String(a.updated)));
+}
+async function openChat(id){
+  let x = null;
+  if(mode === 'mac'){ try{ x = await fetch(HELPER + '/session?id=' + encodeURIComponent(id)).then(r=>r.ok ? r.json() : null); }catch(e){} }
+  if(!x) x = localChats()[id];
+  if(!x) return toast('That chat could not be opened');
+  sessionId = x.id; store.set('ai.session', sessionId);
+  history = (x.turns || []).filter(t=>t && t.answer); store.set('moneyai.history', history);
+  goal = x.goal || ''; store.set('ai.goal', goal); showGoal();
+  $('#turns').innerHTML = ''; $('#hello').hidden = history.length > 0;
+  history.forEach(h=>{ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); });
+  openChats(false); toast('Resumed: ' + String(x.title || '').slice(0, 50));
+  const last = $('#turns').lastElementChild; if(last) last.scrollIntoView({block: 'start'});
+}
+const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+async function loadChats(){
+  const list = await listChats(), box = $('#chats');
+  box.innerHTML = list.length ? list.map(c=>`<div class="chat${c.id === sessionId ? ' cur' : ''}" data-id="${esc(c.id)}"><span class="ct"><b>${esc(c.title || 'Untitled')}</b><small>${c.turns} question${c.turns === 1 ? '' : 's'} · ${esc(ago(c.updated))}${c.source === 'terminal' ? ' · from the terminal' : ''}</small></span><button class="del" type="button" title="Delete this chat" data-del="${esc(c.id)}">×</button></div>`).join('')
+    : '<p class="sub">No chats yet.</p>';
+  box.querySelectorAll('.chat').forEach(el=>el.onclick = e => { if(e.target.closest('.del')) return; openChat(el.dataset.id); });
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick = async () => {
+    const id = b.dataset.del;
+    if(mode === 'mac'){ try{ await post('/session', {id, delete: true}); }catch(e){} }
+    const all = localChats(); delete all[id]; store.set('ai.sessions', all);
+    if(id === sessionId) newChat(true);
+    loadChats();
+  });
+}
+function newChat(quiet){
+  sessionId = newId(); store.set('ai.session', sessionId);
+  history = []; store.set('moneyai.history', []); goal = ''; store.set('ai.goal', ''); showGoal();
+  $('#turns').innerHTML = ''; $('#hello').hidden = false; openChats(false);
+  if(!quiet) toast('New chat — the last one is in Chats');
+}
+const openChats = on => { $('#chatsPanel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadChats(); };
+$('#openChats').onclick = () => openChats(true);
+$('#closeChats').onclick = () => openChats(false);
+$('#newChat').onclick = () => newChat();
 
 /* ---------------------------------------------------------------- connectors: what it may use */
 const BUILTIN = [

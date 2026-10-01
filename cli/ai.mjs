@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /* =========================================================
    ai — your own AI on the command line, on its own (like a terminal assistant); ask about anything.
+   Every command and setting: ai help (cli/help.mjs, also docs/HELP.md).
      ai "question"              one answer: sums worked out exactly, facts looked up, anything else searched on the
                                 web, read, and answered by an AI with its sources
      ai                         a conversation (follow-up questions keep the thread)
@@ -27,6 +28,7 @@ import * as Local from './local.mjs';
 import {runAgent} from './agent.mjs';
 import * as Market from './market.mjs';
 import * as Runner from './runner.mjs';
+import * as Help from './help.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -84,6 +86,7 @@ async function searcher(cfg){
 const FILE_TYPES = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|yaml|yml|ini|js|ts|py|sql)$/i;
 async function answer(question, o){
   const cfg = config();
+  o.disabled = Array.from(new Set((o.disabled || []).concat(cfg.ai.off || [])));
   // the page's cloud keys, for this one answer only (never written to disk)
   if(o.cloudKeys) cfg.ai.keys = Object.assign({}, cfg.ai.keys, Object.fromEntries(Object.entries(o.cloudKeys).filter(([k, v])=>/^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/.test(k) && typeof v === 'string' && v.length < 400)));
   const {AI, Web} = engine(cfg), S = await searcher(cfg);
@@ -161,6 +164,16 @@ async function answer(question, o){
         if(opts && opts.onDelta && !calls.length) opts.onDelta(content);
         return {message: {role: 'assistant', content, tool_calls: calls.length ? calls : undefined}, model: useModel};
       };
+      // pictures: a model on this Mac that can see (gemma3 and the like) describes them and reads their text
+      const vision = models.find(m=>/gemma3|llava|vision|qwen2\.5vl|qwen2\.5-vl|minicpm-v|moondream|granite3\.2-vision/i.test(m));
+      const see = vision ? async (im, q) => {
+        step('🖼 Looking at the picture with ' + vision);
+        const r = await _fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model: vision, stream: false, keep_alive: '10m', options: {temperature: 0.1, num_ctx: 8192},
+          messages: [{role: 'user', content: 'The user asks: "' + q + '"\nDescribe this picture in detail so someone who cannot see it can answer that. Copy any text, numbers, labels, tables or code in it exactly. Say what kind of picture it is (photo, screenshot, chart, receipt, document…). Do not guess what is not visible.', images: [im.image]}]})});
+        if(!r.ok) throw new Error(vision + ' answered ' + r.status);
+        const j = await r.json();
+        return {text: String((j.message || {}).content || '').trim(), model: vision};
+      } : null;
       const pick = (q, text, n) => { const b = Web.bestSentences(q, [{title: '', url: '', text, rank: 0}], n); return b.length ? b.map(x=>x.s).join(' ') : String(text).slice(0, 2500); };
       // dates too: "days from today to 8 November 2026", "days between 2026-10-01 and 2026-11-08"
       const MON = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -177,7 +190,7 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments,
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments, see,
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
         cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}) : null,
         market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
@@ -379,6 +392,93 @@ function forgetLesson(n){
   console.log(green('Forgotten: ') + String(L.label || L.key).slice(0, 80));
 }
 
+/* ---------------------------------------------------------------- CHATS: every conversation kept, to come back to
+   ~/.money-ai/sessions/<id>.json — the page's and the terminal's in one place, so either can resume the other's.
+   {id, title, source, created, updated, goal, turns: [{q, answer: {text, sources, by, model, secs, chart}, steps, traces}]} */
+const SESSIONS = path.join(HOME, 'sessions');
+const newId = () => new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14) + '-' + Math.random().toString(36).slice(2, 6);
+const okId = id => /^[\w-]{6,40}$/.test(String(id || ''));
+export function listSessions(){
+  try{ fs.mkdirSync(SESSIONS, {recursive: true, mode: 0o700}); }catch(e){}
+  return fs.readdirSync(SESSIONS).filter(f=>f.endsWith('.json')).map(f=>{ const x = readJson(path.join(SESSIONS, f), null); return x && {id: x.id, title: x.title, source: x.source, updated: x.updated, created: x.created, turns: (x.turns || []).length}; })
+    .filter(Boolean).sort((a, b)=>String(b.updated).localeCompare(String(a.updated)));
+}
+export function loadSession(id){ return okId(id) ? readJson(path.join(SESSIONS, id + '.json'), null) : null; }
+export function saveSession(x){
+  if(!x || !okId(x.id)) return null;
+  const turns = (Array.isArray(x.turns) ? x.turns : []).slice(-60).map(t=>({q: String(t.q || '').slice(0, 4000), answer: t.answer || {}, steps: t.steps || [], traces: t.traces || []}));
+  if(!turns.length) return null;
+  const old = loadSession(x.id) || {};
+  const s2 = {id: x.id, title: String(x.title || turns[0].q).replace(/\s+/g, ' ').slice(0, 80), source: x.source || old.source || 'page', created: old.created || x.created || new Date().toISOString(), updated: new Date().toISOString(), goal: String(x.goal || '').slice(0, 400), turns};
+  let body = JSON.stringify(s2);
+  if(body.length > 4e6){ s2.turns = turns.map(t=>Object.assign({}, t, {traces: []})); body = JSON.stringify(s2); }
+  fs.mkdirSync(SESSIONS, {recursive: true, mode: 0o700});
+  fs.writeFileSync(path.join(SESSIONS, x.id + '.json'), body, {mode: 0o600});
+  // keep the newest 100
+  listSessions().slice(100).forEach(o=>{ try{ fs.unlinkSync(path.join(SESSIONS, o.id + '.json')); }catch(e){} });
+  return s2.id;
+}
+export function deleteSession(id){ if(!okId(id)) return false; try{ fs.unlinkSync(path.join(SESSIONS, id + '.json')); return true; }catch(e){ return false; } }
+const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+function printSessions(list){
+  if(!list.length) return console.log(dim('  No chats yet.'));
+  list.slice(0, 15).forEach((x, i)=>console.log('  ' + cyan(String(i + 1).padStart(2)) + '  ' + x.title.slice(0, 70) + dim('  · ' + x.turns + ' question' + (x.turns === 1 ? '' : 's') + ' · ' + ago(x.updated) + ' · ' + x.source)));
+}
+// bring a chat back into a conversation: its thread (last 3 exchanges), its goal, and a look at where it left off
+function resumeInto(o, x){
+  o.session = {id: x.id, title: x.title, source: 'terminal', goal: x.goal || '', turns: x.turns.slice()};
+  o.goal = x.goal || '';
+  o.history = x.turns.slice(-3).flatMap(t=>[{role: 'user', content: t.q}, {role: 'assistant', content: String((t.answer || {}).text || '').slice(0, 1500)}]);
+  console.log(bold('\nResumed: ') + x.title + dim('  (' + x.turns.length + ' question' + (x.turns.length === 1 ? '' : 's') + (o.goal ? ' · 🎯 ' + o.goal : '') + ')'));
+  x.turns.slice(-2).forEach(t=>{ console.log(cyan('› ') + t.q); console.log(dim('  ' + String((t.answer || {}).text || '').replace(/\s+/g, ' ').slice(0, 220) + (String((t.answer || {}).text || '').length > 220 ? '…' : ''))); });
+  console.log('');
+}
+async function pickSession(arg, inConversation){
+  const list = listSessions();
+  if(!list.length){ console.log(dim('No chats to resume yet.')); return null; }
+  if(arg && /^\d+$/.test(arg)) return list[+arg - 1] ? loadSession(list[+arg - 1].id) : null;
+  if(arg) return loadSession(arg);
+  if(inConversation){ console.log(bold('\nYour chats')); printSessions(list); console.log(dim('\n  /resume <number> to continue one')); return null; }
+  if(!process.stdin.isTTY) return loadSession(list[0].id);
+  console.log(bold('\nYour chats') + dim('  (newest first)'));
+  printSessions(list);
+  const a = await ask('\nResume which? ' + dim('[1] '));
+  const n = /^\d+$/.test(a) ? +a : 1;
+  return list[n - 1] ? loadSession(list[n - 1].id) : null;
+}
+
+/* ---------------------------------------------------------------- help: the guide and your settings as they are now */
+const TOOLS_ON_OFF = ['web', 'read', 'calc', 'market', 'code', 'connectors'];
+async function helpState(o){
+  const cfg = config(); engine(cfg);
+  let models = [];
+  try{ models = ((await (await _fetch(String(cfg.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); }catch(e){}
+  const B = global.MoneyBrain, L = B.lessons({app: 'ai'}).filter(x=>!x.off), cs = getConnectors();
+  return {searxng: await Local.searxngUp(), model: await localModel(), coder: models.find(m=>/coder/i.test(m)) || '', cloud: !!cfg.ai.cloud, cloudNames: cloudNames(),
+    off: Array.from(new Set((cfg.ai.off || []).concat((o && o.disabled) || []))), connectors: cs.length, connectorsOn: cs.filter(c=>c.on !== false).length,
+    rules: userRules().length, rulesFile: RULES_FILE.replace(os.homedir(), '~'), lessons: L.filter(x=>x.topic === 'case').length, saved: L.filter(x=>x.topic === 'good').length,
+    profile: L.filter(x=>x.topic === 'profile').length, selfexam: readJson(path.join(HOME, 'selfexam.json'), null), goal: o && o.goal};
+}
+const showHelp = async o => console.log(Help.terminal(await helpState(o), {bold, dim, cyan, green, yellow}));
+function setTool(name, on){
+  if(!TOOLS_ON_OFF.includes(name)) return console.log(yellow('Tools: ' + TOOLS_ON_OFF.join(', ')));
+  const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
+  c.ai.off = Array.from(new Set((c.ai.off || []).filter(t=>t !== name).concat(on ? [] : [name])));
+  writeJson(CONFIG, c);
+  console.log((on ? green('On: ') : yellow('Off: ')) + name + dim(c.ai.off.length ? '   (off now: ' + c.ai.off.join(', ') + ')' : '   (everything is on)'));
+}
+function listConnectors(){
+  getConnectors().forEach(c=>console.log('  ' + (c.on !== false ? green('on ') : yellow('off')) + ' ' + bold(c.name) + dim(' — ' + c.description)));
+  console.log(dim('  Add or switch them on the page (ai ui → Connectors), or edit ~/.money-ai/connectors.json'));
+}
+function setCloud(v){
+  const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
+  if(/^(on|off)$/.test(v || '')){ c.ai.cloud = v === 'on'; writeJson(CONFIG, c); }
+  const names = cloudNames();
+  console.log(bold('Cloud AI for hard questions: ') + (c.ai.cloud ? green('on') : 'off') + dim('  (ai cloud on | off · one question: ai --cloud "…")'));
+  console.log('Cloud AIs with keys: ' + (names.length ? names.join(', ') : yellow('none — use "Copy my AI keys to this Mac" on the AI page, or ai setup')));
+}
+
 /* ---------------------------------------------------------------- the command */
 async function main(){
   const args = process.argv.slice(2);
@@ -393,20 +493,28 @@ async function main(){
     else if(a === '--deep') o.deep = true;
     else if(a === '--classic') o.classic = true;
     else if(a === '--cloud') o.cloud = true;
-    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 17).join('\n').replace(/^\s*/gm, '')); return; }
+    else if(a === '--resume' || a === '-r'){ o.resume = true; if(args[i + 1] && !/^-/.test(args[i + 1]) && (/^\d{1,3}$/.test(args[i + 1]) || okId(args[i + 1]) && /^\d{14}-/.test(args[i + 1]))) o.resumeArg = args[++i]; }
+    else if(a === '-h' || a === '--help'){ await showHelp(o); return; }
     else rest.push(a);
   }
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
   if(rest[0] === 'rules' && rest.length === 1) return rules();
-  if(rest[0] === 'cloud' && rest.length <= 2){
-    const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
-    if(/^(on|off)$/.test(rest[1] || '')){ c.ai.cloud = rest[1] === 'on'; writeJson(CONFIG, c); }
-    const names = cloudNames();
-    console.log(bold('Cloud AI for hard questions: ') + (c.ai.cloud ? green('on') : 'off') + dim('  (ai cloud on | off · one question: ai --cloud "…")'));
-    console.log('Cloud AIs with keys: ' + (names.length ? names.join(', ') : yellow('none — use "Copy my AI keys to this Mac" on the AI page, or ai setup')));
+  if(rest[0] === 'cloud' && rest[1] === 'test'){
+    // one short question to each cloud AI with a key: which answer, which do not (and why)
+    const cfg = config(), {AI} = engine(cfg);
+    for(const id of cloudNames()){
+      const t0 = Date.now();
+      try{ const r = await AI.chat('Reply with the single word OK.', [{role: 'user', content: 'Say OK.'}], {only: [id], maxTokens: 20}); console.log(green('  ✓ ') + id.padEnd(11) + r.model + dim('  ' + (Date.now() - t0) + ' ms')); }
+      catch(e){ console.log(red('  ✗ ') + id.padEnd(11) + String(e.message).slice(0, 120)); }
+    }
     return;
   }
+  if(rest[0] === 'cloud' && rest.length <= 2) return setCloud(rest[1]);
+  if((rest[0] === 'off' || rest[0] === 'on') && rest.length === 2) return setTool(rest[1], rest[0] === 'on');
+  if(rest[0] === 'connectors' && rest.length === 1) return listConnectors();
+  if((rest[0] === 'sessions' || rest[0] === 'chats') && rest.length === 1){ console.log(bold('\nYour chats') + dim('  (ai --resume <number> to continue one)')); printSessions(listSessions()); return; }
+  if(rest[0] === 'help' && rest.length === 1) return showHelp(o);
   if(rest[0] === 'teach' && rest.length > 1) return teach(rest.slice(1).join(' '));
   if(rest[0] === 'forget' && /^\d+$/.test(rest[1] || '') && rest.length === 2) return forgetLesson(rest[1]);
   if(rest[0] === 'ui'){ const url = 'http://127.0.0.1:8899/'; let up = false; try{ up = (await fetch(url + 'health')).ok; }catch(e){}
@@ -417,25 +525,52 @@ async function main(){
     try{ const q = rest.join(' '); show(Object.assign(await answer(q, o), {q}), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
     return;
   }
-  // a conversation
-  console.log(bold('AI') + dim(' — ask anything; it works out, looks up and reads the web. /help, /exit'));
+  // a conversation (a new one, or a chat resumed with --resume)
+  if(o.resume){ const x = await pickSession(o.resumeArg); if(x) resumeInto(o, x); else if(o.resumeArg) console.log(yellow('No such chat — ai sessions lists them.')); }
+  if(!o.session) o.session = {id: newId(), source: 'terminal', turns: []};
+  const keep = (q, out) => { o.session.turns.push({q, answer: {text: out.text, sources: out.sources || [], by: out.by || '', model: out.model || '', chart: out.chart || null}}); o.session.goal = o.goal || ''; saveSession(o.session); };
+  console.log(bold('AI') + dim(' — ask anything; it works out, looks up and reads the web. /help for every command and setting, /exit to leave'));
+  let lastOut = null;
   const rl = readline.createInterface({input: process.stdin, output: process.stdout, prompt: cyan('› ')});
-  rl.prompt();
+  let closed = false; rl.on('close', ()=>{ closed = true; });
+  const prompt = () => { if(!closed) try{ rl.prompt(); }catch(e){} };      // input may end while an answer is still coming
+  prompt();
   for await (const line of rl){
     const q = line.trim();
-    if(!q){ rl.prompt(); continue; }
+    if(!q){ prompt(); continue; }
     if(q === '/exit' || q === '/quit') break;
-    if(q.startsWith('/wrong ')){ await teach(q.slice(7)); rl.prompt(); continue; }
-    if(q === '/help'){ console.log(dim('  Ask a question. /wrong <what is right> to correct the last answer · /file <path> to add a file · /clear to start over · /status · /exit')); rl.prompt(); continue; }
-    if(q === '/status'){ await status(); rl.prompt(); continue; }
-    if(q === '/clear'){ o.history = []; o.files = []; console.log(dim('  Started over.')); rl.prompt(); continue; }
-    if(q.startsWith('/file ')){ o.files.push(q.slice(6).trim()); console.log(dim('  Added ' + q.slice(6).trim())); rl.prompt(); continue; }
+    // commands: the same as on the page (/help lists them with your settings)
+    const cm = /^\/(\w+)\s*([\s\S]*)$/.exec(q);
+    if(cm){
+      const [, c, arg] = cm, a = arg.trim();
+      try{
+        if(c === 'help') await showHelp(o);
+        else if(c === 'wrong'){ if(a) await teach(a); else console.log(yellow('  /wrong <what is right>')); }
+        else if(c === 'good'){ if(lastOut){ const r = feedback({question: lastOut.q, good: true, answer: lastOut}); console.log(r.saved ? green('  Kept — this question gets this answer next time') : dim('  Thanks — answers about now are not kept (they change)')); } else console.log(yellow('  Ask something first')); }
+        else if(c === 'goal'){ o.goal = a.slice(0, 400); console.log(o.goal ? green('  🎯 Goal: ') + o.goal : dim('  Goal cleared')); }
+        else if(c === 'rule'){ console.log(addRule(a) ? green('  Rule added — every answer follows it') : yellow('  /rule <a rule of at least a few words>')); }
+        else if(c === 'remember'){ console.log(remember(a) ? green('  Remembered') : yellow('  /remember <something about you>')); }
+        else if(c === 'fresh'){ if(a){ const out = Object.assign(await answer(a, Object.assign({}, o, {fresh: true})), {q: a}); show(out, o); lastOut = out; keep(a, out); } }
+        else if(c === 'cloud') setCloud(a);
+        else if(c === 'off' || c === 'on') setTool(a, c === 'on');
+        else if(c === 'connectors') listConnectors();
+        else if(c === 'learned' || c === 'rules') await rules();
+        else if(c === 'status') await status();
+        else if(c === 'new' || c === 'clear'){ o.history = []; o.files = []; o.goal = ''; o.session = {id: newId(), source: 'terminal', turns: []}; console.log(dim('  Started a new chat (the last one is kept: /resume or ai --resume).')); }
+        else if(c === 'resume' || c === 'chats'){ const x = await pickSession(a, true); if(x) resumeInto(o, x); }
+        else if(c === 'file'){ if(a){ o.files.push(a); console.log(dim('  Added ' + a)); } else console.log(yellow('  /file <path>')); }
+        else console.log(yellow('  No such command — /help lists them'));
+      }catch(e){ console.error(red('✗ ' + e.message)); }
+      prompt(); continue;
+    }
     try{
       const out = Object.assign(await answer(q, o), {q});
+      lastOut = out;
+      keep(q, out);
       show(out, o);
       o.history = o.history.concat([{role: 'user', content: q}, {role: 'assistant', content: String(out.text).slice(0, 1500)}]).slice(-6);
     }catch(e){ console.error(red('✗ ' + e.message)); }
-    rl.prompt();
+    prompt();
   }
   rl.close();
 }
