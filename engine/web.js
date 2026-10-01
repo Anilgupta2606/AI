@@ -546,11 +546,9 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       const foreign = Array.from(new Set(nums(bare.replace(/(^|\n)\s*\d+[.)]\s/g, ' ')).filter(n=>!have.has(n) && !/^(19|20)\d\d$/.test(n) && (n.length >= 3 || /\./.test(n)))));
       if(foreign.length) out.push({rule: 'R4', text: 'These numbers are not in what was read: ' + foreign.slice(0, 5).join(', ') + '.'});
     }
-    // R2: sentences with figures and no source mark
-    if(valid.size){
-      const uncited = sentencesOf(text).filter(x=>/\d[\d,]*\.\d|\d{3,}|₹|%/.test(x.replace(/\b(19|20)\d\d\b/g, '')) && !/\[\d+\]/.test(x) && x.trim().length > 20);
-      if(uncited.length) out.push({rule: 'R2', text: 'Mark the source for: "' + uncited[0].trim().slice(0, 90) + '"'});
-    }
+    // R2: an answer built on sources that cites none of them (each number's own source is R4's job)
+    if(valid.size && !/\[\d+\]/.test(text) && /\d{3,}|\d\.\d/.test(bare.replace(/\b(19|20)\d\d\b/g, '')))
+      out.push({rule: 'R2', text: 'Mark which source each fact comes from, like [1].'});
     // R7: a figure stated as decided where every source sentence with it is a forecast
     const FORE = /\b(expect|expected|expects|may|might|likely|could|poll|forecast|predict|predicted|projected|see|sees|economists|analysts|estimate)\b/i;
     const DONE = /\b(raised|hiked|cut|reduced|increased|decreased|kept|held|left|unchanged|decided|announced|set|approved|won|launched)\b/i;
@@ -564,9 +562,10 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
     // R8: names the sources never mention
     if(c.sources && c.sources.length){
       const q = String(c.question || '').toLowerCase();
-      // a lone capitalised word that opens a sentence ("Updated", "Currently") is not a name
-      const names = Array.from(new Set(Array.from(bare.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g))
-        .filter(m=>m[0].includes(' ') || !/(^|[.!?:;]\s*|\n\s*(?:[-*•]\s*)?|\(\s*)$/.test(bare.slice(0, m.index)))
+      // headings and bold labels ("**Conclusion**:", "## Market Context") are not names, nor a lone capitalised word opening a sentence
+      const prose = bare.replace(/^\s*#{1,6}\s.*$/gm, ' ').replace(/\*\*[^*\n]{1,60}\*\*\s*:/g, ' ').replace(/^\s*[-*•]?\s*[A-Z][\w ]{1,40}:/gm, ' ');
+      const names = Array.from(new Set(Array.from(prose.matchAll(/\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})*/g))
+        .filter(m=>m[0].includes(' ') || !/(^|[.!?:;]\s*|\n\s*(?:[-*•]\s*)?|\(\s*)$/.test(prose.slice(0, m.index)))
         .map(m=>m[0]).filter(w=>!COMMON.has(w.split(' ')[0]) && !q.includes(w.toLowerCase()))));
       const missing = names.filter(w=>!srcL.includes(w.toLowerCase()) && !w.split(' ').every(x=>srcL.includes(x.toLowerCase())));
       if(missing.length) out.push({rule: 'R8', text: 'Not in any source read: ' + missing.slice(0, 4).join(', ') + '.'});

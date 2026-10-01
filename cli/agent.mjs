@@ -75,7 +75,7 @@ export async function runAgent(question, o){
   const messages = [{role: 'system', content: SYSTEM(today) + RULEBOOK(o) + about}].concat(o.history || [], [{role: 'user', content: question + lessons + (attached.length ? '\n\nFiles I attached (answer from them; cite them like [1]):\n' + attached.join('\n\n') : '')}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = (o.attachments || []).length ? false : o.isTimely ? o.isTimely(question) : /\b(today|now|latest|current|recent|news|price|rate|score|who is|who won)\b/i.test(question);
-  let lastResults = [], lastChart = null;
+  let lastResults = [], lastChart = null, prevIssues = '';
   let runs = 0, lastRun = null, nudgedRun = false, fixes = 0;
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
@@ -269,7 +269,10 @@ export async function runAgent(question, o){
     if(!best || weight(issues) < weight(best.issues)) best = {text, issues};
     // a day count is never left to the model: the calculator works it out for each date in the answer
     const dayFacts = best.issues.some(i=>i.rule === 'R6') && o.datesIn ? Array.from(new Set(o.datesIn(best.text).map(d=>d.toISOString().slice(0, 10)))).filter(d=>d > today).slice(0, 2).map(d=>o.calc('days from today to ' + d)).filter(Boolean) : [];
-    if(best.issues.length && revisions < 2 && turn < 8){
+    // a rewrite with exactly the same problems will not get better by trying again
+    const same = revisions && prevIssues === issues.map(i=>i.rule + i.text).join('|');
+    prevIssues = issues.map(i=>i.rule + i.text).join('|');
+    if(best.issues.length && revisions < 2 && turn < 8 && !same){
       revisions++;
       if(dayFacts.length) messages.push({role: 'tool', tool_name: 'calculate', content: dayFacts.join(' ')});
       step('Checking against the rules… ' + best.issues.length + ' to fix');
