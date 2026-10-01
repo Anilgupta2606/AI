@@ -35,12 +35,14 @@ export async function runAgent(question, o){
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = /\b(today|now|latest|current|currently|this (week|month|year)|recent|news|live|price|rate|score|update|who is|who won|when is|when was|how much|how many days|days (left|until|till|to))\b/i.test(question);
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0;
+  const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
   const run = async (name, args) => {
     if(name === 'web_search'){
       const q = String(args.query || question).slice(0, 300);
       step('🔎 Searching: ' + q);
       searches++;
       const r = await o.search(q, 8);
+      usedSearch.add(r.provider || 'search');
       return r.results.map(x=>`[${numberOf(x.url, x.title, x.snippet)}] ${x.title}${x.date ? ' (' + String(x.date).slice(0, 10) + ')' : ''}\n${x.url}\n${x.snippet}`).join('\n\n') || 'No results.';
     }
     if(name === 'open_page'){
@@ -49,6 +51,7 @@ export async function runAgent(question, o){
       step('📄 Reading: ' + url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 70));
       opened++;
       const page = await o.read(url, false);
+      usedRead.add(page.via === 'this Mac' ? 'read on this Mac' : 'read via ' + (page.via || 'backup'));
       // only the parts that answer the question (a small model reads only so much)
       const best = o.pick(question + ' ' + (args.looking_for || ''), page.content, 10);
       const n = numberOf(page.url || url, page.title, best);
@@ -134,7 +137,7 @@ export async function runAgent(question, o){
     text = text.replace(/\s*\[(\d+)\]/g, (m, n)=>sources.some(s=>s.n === +n) ? m : '');
     const cited = new Set((text.match(/\[(\d+)\]/g) || []).map(x=>+x.slice(1, -1)));
     return {text, sources: sources.filter(s=>cited.has(s.n)).map(s=>({i: s.n, title: s.title, url: s.url})),
-      by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read'};
+      by: (r.model || 'local model') + ' on this Mac · ' + searches + ' search' + (searches === 1 ? '' : 'es') + (usedSearch.size ? ' (' + Array.from(usedSearch).join(', ') + ')' : '') + ', ' + opened + ' page' + (opened === 1 ? '' : 's') + ' read' + (usedRead.size ? ' (' + Array.from(usedRead).join(', ') + ')' : '')};
   }
   return {text: 'I could not finish within 10 steps. Try a narrower question.', sources: []};
 }
