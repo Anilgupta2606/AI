@@ -380,12 +380,12 @@ export async function runAgent(question, o){
     if(!forceCloud && o.runCode && turn < 8){
       const runnable = Array.from(text.matchAll(/```[ \t]*(python3?|py|javascript|js|node|c|cpp|c\+\+)\s*\n([\s\S]*?)```/gi));
       const madeUp = !runs && /\*\*output|^output:|output when run|it prints/im.test(text) && /```/.test(text);
-      if((runnable.length || madeUp) && !runs && !nudgedRun){
+      if(codeQ && (runnable.length || madeUp) && !runs && !nudgedRun){
         nudgedRun = true;
         pushBack(text, (madeUp ? 'You showed output without running the code — never invent output. ' : '') + 'Before you answer, test the program: call run_code with the whole program (use only the standard library unless the user asked for a package). If it fails, fix it and run again. Then give the final code and the real output it printed.');
         continue;
       }
-      if(lastRun && !lastRun.ok && fixes < 3 && runs < 5){
+      if(codeQ && lastRun && !lastRun.ok && fixes < 3 && runs < 5){
         fixes++;
         pushBack(text, 'The last run failed (' + lastRun.exit + '):\n' + String(lastRun.output).slice(-1500) + '\nFind the cause, fix the code, and run it again with run_code.');
         continue;
@@ -461,7 +461,8 @@ export async function runAgent(question, o){
     // TRUST BUT VERIFY: the code in the answer is run here before it is shown; any "Output" it claims is replaced by
     // what really printed (a small model sometimes writes output it never ran)
     if(o.runCode && !(o.disabled || []).includes('code')){
-      let m = /```[ \t]*(python3?|py|javascript|js|c|cpp|c\+\+)\s*\n([\s\S]*?)```/i.exec(text), lang, code;
+      const isProgram = c => /\b(def|class|import|function|return|print\(|console\.|for|while|const|let|var|#include)\b|=>/.test(c);
+      let m = Array.from(text.matchAll(/```[ \t]*(python3?|py|javascript|js|c|cpp|c\+\+)\s*\n([\s\S]*?)```/gi)).find(x=>isProgram(x[2])), lang, code;
       if(m){ lang = m[1]; code = noToolCalls(m[2]); if(code !== m[2]) text = text.replace(m[2], code); }
       else { const j = /```json\s*([\s\S]*?)```/i.exec(text); if(j){ try{ const o2 = looseJSON(j[1]); const a2 = o2.arguments || {}; if(o2.name === 'run_code' && a2.code){ lang = a2.language || 'python'; code = a2.code; text = text.replace(j[0], '```' + lang + '\n' + code.trim() + '\n```'); } }catch(e){} } }
       if(code && !(lastRun && lastRun.code && lastRun.code.trim() === code.trim())){
@@ -477,9 +478,14 @@ export async function runAgent(question, o){
         text = outBlock.test(text) ? text.replace(outBlock, shown) : text + '\n\n' + shown;
       }
     }
-    // a coding answer always shows the code that was tested and what it printed (not just a description)
-    if(codeQ && lastRun && lastRun.ok && lastRun.code && !/```/.test(text))
-      text += '\n\n```' + (lastRun.language || '') + '\n' + lastRun.code.trim() + '\n```\n\n**Output (run on this Mac):**\n```\n' + String(lastRun.output).slice(0, 2000) + '\n```';
+    // a coding answer always shows the code that was tested (not just a description of what it printed)
+    if(codeQ && lastRun && lastRun.ok && lastRun.code){
+      const sig = (/^\s*(def \w+|class \w+|function \w+|(const|let|var) \w+\s*=)/m.exec(lastRun.code) || [])[1];
+      if(sig && !text.includes(sig)){
+        text = '```' + (lastRun.language || '') + '\n' + lastRun.code.trim() + '\n```\n\n' + text;
+        if(!/output/i.test(text)) text += '\n\n**Output (run on this Mac):**\n```\n' + String(lastRun.output).slice(0, 2000) + '\n```';
+      }
+    }
     // what is still wrong after fixing is shown, not hidden
     const warn = issuesLeft.filter(i=>/R4|R5|R7|R8|R10|R11/.test(i.rule)).map(i=>'⚠ ' + i.text);
     if(issuesLeft.some(i=>i.rule === 'R6') && dayFacts.length) warn.push('✔ Checked with the calculator: ' + dayFacts.join(' '));
