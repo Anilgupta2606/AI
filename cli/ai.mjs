@@ -99,7 +99,13 @@ async function answer(question, o){
     try{ models = ((await (await fetch(ollama.replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); }catch(e){}
     const model = models.length ? AI.rankModels('ollama', models, 'smart')[0] : null;
     if(model){
-      const localUp = await Local.searxngUp();
+      // your search engine not answering: restart it (a few seconds) before any backup is used
+      let localUp = await Local.searxngUp();
+      if(!localUp && !o.noWeb && process.platform === 'darwin'){
+        step('Starting your search engine…');
+        try{ (await import('child_process')).execSync('launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng 2>/dev/null || launchctl load ~/Library/LaunchAgents/com.moneyai.searxng.plist 2>/dev/null', {stdio: 'ignore', shell: '/bin/sh'}); }catch(e){}
+        for(let i = 0; i < 12 && !localUp; i++){ await new Promise(r=>setTimeout(r, 1000)); localUp = await Local.searxngUp(); }
+      }
       const search = async (q, n) => {
         if(o.noWeb) throw new Error('web search is off (--no-web)');
         if(localUp){ try{ return await Local.search(q, n); }catch(e){ if(!S.any) throw e; } }
