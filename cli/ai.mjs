@@ -651,6 +651,7 @@ async function main(){
     else if(a === '--deep') o.deep = true;
     else if(a === '--classic') o.classic = true;
     else if(a === '--cloud') o.cloud = true;
+    else if(a === '--fresh') o.fresh = true;
     else if(a === '--resume' || a === '-r'){ o.resume = true; if(args[i + 1] && !/^-/.test(args[i + 1]) && (/^\d{1,3}$/.test(args[i + 1]) || okId(args[i + 1]) && /^\d{14}-/.test(args[i + 1]))) o.resumeArg = args[++i]; }
     else if(a === '-h' || a === '--help'){ await showHelp(o); return; }
     else rest.push(a);
