@@ -47,7 +47,9 @@ function step(cmd, args, dir, stdin, ms){
   });
 }
 
-export async function run({language, code, stdin}){
+// a file name that is safe in the sandbox folder ("Sales Q3 — Sheet1.csv" -> "Sales_Q3_Sheet1.csv")
+export const safeName = n => String(n || 'file').replace(/\.[^.]+$/, m=>m.toLowerCase()).replace(/[^\w.\-]+/g, '_').replace(/_+/g, '_').replace(/^[_.]+/, '').slice(-80) || 'file';
+export async function run({language, code, stdin, files}){
   const lang = ALIAS[String(language || '').toLowerCase()] || String(language || '').toLowerCase();
   const L = LANGS[lang];
   if(!L) return {ok: false, output: 'I can run: ' + languages().join(', ') + '.', language: lang};
@@ -60,6 +62,8 @@ export async function run({language, code, stdin}){
   let file = L.file;
   if(lang === 'java'){ const m = /public\s+(?:final\s+)?class\s+(\w+)/.exec(code); if(m) file = m[1] + '.java'; }
   fs.writeFileSync(path.join(dir, file), code);
+  // the user's attached files, there to be opened by name (open('sales.csv'))
+  for(const f of (files || []).slice(0, 40)) if(f && f.text != null) fs.writeFileSync(path.join(dir, safeName(f.name)), String(f.text).slice(0, 5e6));
   let output = '', exit = 0, ms = 0;
   for(const [cmd, args] of L.run(file)){
     const r = await step(cmd, args, fs.realpathSync(dir), stdin, 20000);

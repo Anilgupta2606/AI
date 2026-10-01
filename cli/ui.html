@@ -47,7 +47,7 @@ a{color:inherit}
 @keyframes turn{to{transform:rotate(360deg)}}
 
 /* top bar */
-header{position:sticky; top:0; z-index:4; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); background:color-mix(in srgb, var(--page) 78%, transparent); border-bottom:1px solid color-mix(in srgb, var(--line) 70%, transparent)}
+header.old{position:sticky; top:0; z-index:4; backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); background:color-mix(in srgb, var(--page) 78%, transparent); border-bottom:1px solid color-mix(in srgb, var(--line) 70%, transparent)}
 .bar{max-width:800px; margin:0 auto; padding:12px 16px; display:flex; align-items:center; gap:12px}
 .brand{display:flex; align-items:center; gap:10px; font:700 22px/1 var(--display); letter-spacing:-.02em}
 .where{display:flex; gap:6px; flex-wrap:wrap; margin-left:auto; justify-content:flex-end}
@@ -57,7 +57,49 @@ header{position:sticky; top:0; z-index:4; backdrop-filter:blur(14px); -webkit-ba
 .pill.model{color:var(--think); background:var(--think-bg); border-color:transparent}
 .learnedBtn{background:var(--ink); color:var(--page); border:0; border-radius:999px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer}
 
-main{flex:1; width:100%; max-width:800px; margin:0 auto; padding:28px 16px 190px}
+/* layout: chats on the left (like Claude), the conversation in the middle */
+:root{--sb:272px}
+body{padding-left:var(--sb)}
+.sidebar{position:fixed; top:0; left:0; bottom:0; width:var(--sb); display:flex; flex-direction:column; gap:10px; padding:14px 12px 12px; z-index:12;
+  background:color-mix(in srgb, var(--card) 72%, var(--page)); border-right:1px solid var(--line)}
+.sbtop{display:flex; align-items:center; justify-content:space-between; padding:2px 6px}
+.iconbtn{border:0; background:none; color:var(--ink2); width:36px; height:36px; border-radius:10px; cursor:pointer; display:grid; place-items:center; font-size:22px; line-height:1}
+.iconbtn:hover{background:var(--page)}
+.sbx,.menuBtn{display:none}
+.newchat{display:flex; align-items:center; gap:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:12px; padding:10px 12px; font-weight:600; font-size:14.5px; cursor:pointer; box-shadow:var(--shadow)}
+.newchat:hover{border-color:var(--think)}
+.sbsearch{border:1px solid var(--line); background:var(--page); border-radius:10px; padding:8px 11px; font-size:13.5px; color:var(--ink)}
+.chatlist{flex:1; overflow-y:auto; margin:4px -4px 0; padding:0 4px}
+.chatlist h6{font-size:11.5px; font-weight:700; color:var(--mut); margin:14px 8px 4px; letter-spacing:.01em}
+.chat{display:flex; align-items:center; gap:6px; padding:7px 8px 7px 10px; border-radius:10px; cursor:pointer; font-size:13.8px; color:var(--ink2)}
+.chat:hover{background:var(--page)} .chat.cur{background:var(--think-bg); color:var(--ink); font-weight:600}
+.chat .ct{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.chat .src{font-size:11px; color:var(--mut); flex:none}
+.chat .del{border:0; background:none; color:var(--mut); cursor:pointer; font-size:15px; width:24px; height:24px; border-radius:7px; visibility:hidden; flex:none}
+.chat:hover .del,.chat.cur .del{visibility:visible} .chat .del:hover{color:var(--check); background:var(--check-bg)}
+.sbnav{display:flex; flex-direction:column; gap:2px; border-top:1px solid var(--line); padding-top:8px}
+.navbtn{display:flex; align-items:center; gap:10px; border:0; background:none; color:var(--ink2); padding:8px 10px; border-radius:10px; font-size:14px; font-weight:500; cursor:pointer; text-align:left}
+.navbtn:hover{background:var(--page); color:var(--ink)} .navbtn i{font-style:normal; width:20px; text-align:center}
+.navbtn .count{margin-left:auto}
+.acct{position:relative}
+.acctrow{display:flex; align-items:center; gap:10px; width:100%; border:0; background:none; padding:8px; border-radius:12px; cursor:pointer; text-align:left; color:var(--ink)}
+.acctrow:hover{background:var(--page)}
+.acctrow .avatar{width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#fff; font-weight:700; background:var(--orb); flex:none}
+.who2{flex:1; min-width:0} .who2 b{display:block; font-size:14px} .who2 small{display:block; font-size:12px; color:var(--mut); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.dots3{color:var(--mut)}
+.menu.up{top:auto; bottom:54px; left:0; right:auto; width:300px}
+header.topbar{position:sticky; top:0; z-index:4; display:flex; align-items:center; gap:10px; padding:10px 20px; min-height:56px;
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); background:color-mix(in srgb, var(--page) 80%, transparent); border-bottom:1px solid color-mix(in srgb, var(--line) 70%, transparent)}
+.ctitle{flex:1; min-width:0; font:600 15px var(--body); color:var(--ink2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.topbar .where{margin-left:auto; flex-wrap:nowrap}
+main{flex:1; width:100%; max-width:820px; margin:0 auto; padding:28px 20px 190px}
+@media (max-width:900px){
+  :root{--sb:0px}
+  .sidebar{width:min(300px, 86vw); transform:translateX(-100%); transition:transform .22s ease; box-shadow:20px 0 40px -20px rgb(0 0 0 / .35)}
+  body.sbOpen .sidebar{transform:none}
+  .sbx,.menuBtn{display:grid}
+  .topbar .where .pill:not(.model){display:none}
+}
 
 /* first screen */
 .hello{padding:7vh 0 0}
@@ -165,7 +207,7 @@ details.also{margin-top:10px} details.also summary{cursor:pointer; font-size:13p
 code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:1px 5px; border-radius:5px}
 
 /* the box you type in */
-.composer{position:fixed; left:0; right:0; bottom:0; padding:26px 16px calc(16px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--page) 35%); z-index:3}
+.composer{position:fixed; left:var(--sb); right:0; bottom:0; padding:26px 16px calc(16px + env(safe-area-inset-bottom)); background:linear-gradient(transparent, var(--page) 35%); z-index:3}
 .box{max-width:800px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; border-radius:24px; padding:10px 10px 10px 18px; box-shadow:var(--shadow);
   border:2px solid transparent; background-image:linear-gradient(var(--card), var(--card)), linear-gradient(90deg, var(--line), var(--line)); background-origin:border-box; background-clip:padding-box, border-box}
 .box:focus-within{background-image:linear-gradient(var(--card), var(--card)), var(--orb)}
@@ -233,14 +275,10 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .sw .x{margin-left:auto}
 .cform{display:flex; flex-direction:column; gap:8px; margin-top:10px}
 .cform input{background:var(--page); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px}
-.chat{display:flex; gap:10px; align-items:center; padding:10px 12px; border-radius:14px; cursor:pointer; border:1px solid transparent}
-.chat:hover{background:var(--page)} .chat.cur{border-color:var(--think); background:var(--think-bg)}
-.chat .ct{flex:1; min-width:0} .chat .ct b{display:block; font-size:14px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap} .chat .ct small{color:var(--mut); font-size:12px}
-.chat .del{border:0; background:none; color:var(--mut); cursor:pointer; font-size:16px; padding:2px 6px; border-radius:8px} .chat .del:hover{color:var(--check); background:var(--check-bg)}
-.toast{position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:var(--ink); color:var(--page); border-radius:999px; padding:9px 18px; font-size:14px; font-weight:600; z-index:30; box-shadow:var(--shadow); max-width:90vw}
+.toast{position:fixed; left:calc(50% + var(--sb) / 2); bottom:120px; transform:translateX(-50%); background:var(--ink); color:var(--page); border-radius:999px; padding:9px 18px; font-size:14px; font-weight:600; z-index:30; box-shadow:var(--shadow); max-width:90vw}
 
 /* what it has learned */
-.scrim{position:fixed; inset:0; background:rgb(20 18 50 / .3); opacity:0; pointer-events:none; transition:opacity .2s; z-index:5}
+.scrim{position:fixed; inset:0; z-index:11; background:rgb(20 18 50 / .3); opacity:0; pointer-events:none; transition:opacity .2s; z-index:5}
 .scrim.open{opacity:1; pointer-events:auto}
 .panel{position:fixed; inset:0 0 0 auto; width:min(460px,100%); background:var(--card); transform:translateX(100%); transition:transform .25s ease; overflow-y:auto; z-index:6; padding:22px 20px 40px}
 .panel.open{transform:none}
@@ -255,19 +293,22 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .count{display:inline-block; min-width:26px; text-align:center; font-weight:700; font-size:12px; border-radius:999px; background:var(--check-bg); color:var(--check); padding:1px 7px; margin-right:6px}
 .close{float:right}
 @media (prefers-reduced-motion: reduce){ *{animation:none!important; transition:none!important} }
-@media (max-width:600px){ .where .pill:not(.model){display:none} .pill.model{max-width:48vw; overflow:hidden; text-overflow:ellipsis; display:inline-block} .q div{max-width:92%} .hint span:first-child{display:none} }
+@media (max-width:600px){ .pill.model{max-width:48vw; overflow:hidden; text-overflow:ellipsis; display:inline-block} .q div{max-width:92%} .hint span:first-child{display:none} }
 </style>
 </head>
 <body>
-<header><div class="bar">
-  <div class="brand"><div class="orb" id="orb"></div>AI</div>
-  <div class="where"><span class="pill" id="stWhere"><i></i>Starting</span><span class="pill" id="stSearch" hidden></span><span class="pill model" id="stModel" hidden></span></div>
-  <button class="learnedBtn ghosty" id="openChats" title="Your past chats">Chats</button>
-  <button class="learnedBtn ghosty" id="openConn" title="What it can use">Connectors</button>
-  <button class="learnedBtn" id="openLearned">Learned</button>
+<aside class="sidebar" id="sidebar" aria-label="Chats and settings">
+  <div class="sbtop"><div class="brand"><div class="orb" id="orb"></div>AI</div><button class="iconbtn sbx" id="sbClose" type="button" aria-label="Close the menu">×</button></div>
+  <button class="newchat" id="newChat" type="button"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New chat</button>
+  <input class="sbsearch" id="chatSearch" type="search" placeholder="Search chats" aria-label="Search chats">
+  <nav class="chatlist" id="chats" aria-label="Your chats"></nav>
+  <div class="sbnav">
+    <button class="navbtn" id="openConn" type="button"><i>🔌</i>Connectors</button>
+    <button class="navbtn" id="openLearned" type="button"><i>✦</i><span>What it learned</span><b class="count" id="learnedCount" hidden></b></button>
+  </div>
   <div class="acct">
-    <button class="avatar" id="acctBtn" aria-label="Account" aria-haspopup="true" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></button>
-    <div class="menu" id="acctMenu" hidden>
+    <button class="acctrow" id="acctBtn" type="button" aria-haspopup="true" aria-expanded="false"><span class="avatar" id="avatarLetter">A</span><span class="who2"><b id="whoName">admin</b><small id="sbStatus">Starting…</small></span><span class="dots3">⋯</span></button>
+    <div class="menu up" id="acctMenu" hidden>
       <div class="who">Signed in as <b id="whoName">admin</b></div>
       <div class="mlabel">Theme</div>
       <div class="seg" id="themeSeg" role="radiogroup" aria-label="Theme"><button data-t="auto" role="radio">Auto</button><button data-t="light" role="radio">Light</button><button data-t="dark" role="radio">Dark</button></div>
@@ -276,7 +317,12 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
       <button class="ghost wide" id="logout">Sign out</button>
     </div>
   </div>
-</div></header>
+</aside>
+<header class="topbar">
+  <button class="iconbtn menuBtn" id="sbOpen" type="button" aria-label="Open chats"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+  <div class="ctitle" id="chatTitle">New chat</div>
+  <div class="where"><span class="pill" id="stWhere"><i></i>Starting</span><span class="pill" id="stSearch" hidden></span><span class="pill model" id="stModel" hidden></span></div>
+</header>
 <section class="login" id="login" hidden>
   <form class="lcard" id="loginForm" autocomplete="on">
     <div class="orb" style="--s:52px"></div>
@@ -313,30 +359,24 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
   <div class="slash" id="slash" role="listbox" hidden></div>
   <form class="box" id="form">
     <button class="clip" type="button" id="clip" aria-label="Attach a file" title="Attach files: PDF, text, CSV, JSON, code"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/></svg></button>
-    <input type="file" id="fileIn" multiple hidden accept=".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.log,.yaml,.yml,.ini,.js,.mjs,.ts,.py,.java,.c,.cpp,.h,.sql,.sh,.css">
+    <input type="file" id="fileIn" multiple hidden accept=".pdf,.xlsx,.xls,.xlsm,.ods,.csv,.tsv,.docx,.pptx,.txt,.md,.markdown,.json,.html,.htm,.xml,.log,.yaml,.yml,.ini,.js,.mjs,.ts,.py,.java,.c,.cpp,.h,.sql,.sh,.css">
     <input type="file" id="folderIn" hidden webkitdirectory multiple>
     <input type="file" id="imageIn" hidden multiple accept="image/*">
     <input type="file" id="cameraIn" hidden accept="image/*" capture="environment">
     <div class="attachMenu" id="attachMenu" hidden role="menu">
-      <button type="button" data-in="fileIn" role="menuitem"><i>📄</i><span><b>Files</b><small>PDF, text, CSV, JSON, code</small></span></button>
+      <button type="button" data-in="fileIn" role="menuitem"><i>📄</i><span><b>Files</b><small>PDF, Excel, Word, PowerPoint, CSV, code</small></span></button>
       <button type="button" data-in="folderIn" role="menuitem"><i>🗂</i><span><b>Folder</b><small>Its text and code files (up to 40)</small></span></button>
       <button type="button" data-in="imageIn" role="menuitem"><i>🖼</i><span><b>Images</b><small>Photos, screenshots, receipts, charts</small></span></button>
       <button type="button" data-in="cameraIn" role="menuitem" class="phoneOnly"><i>📷</i><span><b>Take a photo</b><small>With the camera</small></span></button>
     </div>
-    <textarea id="q" rows="1" placeholder="Ask anything…  (type / for commands)" aria-label="Your question"></textarea>
+    <textarea id="q" rows="1" placeholder="Ask anything…  ( / for commands)" aria-label="Your question"></textarea>
     <button class="send" id="ask" aria-label="Ask"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
   </form>
   <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><button class="link" id="clear" type="button">New chat</button></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
-<aside class="panel" id="chatsPanel" aria-label="Your chats">
-  <button class="ghost close" id="closeChats">Close</button>
-  <h2>Chats</h2>
-  <p class="sub">Every conversation is kept. Open one to carry on where you left off — on this Mac, chats from the terminal (ai --resume) are here too.</p>
-  <button class="btn wide" id="newChat" type="button" style="margin:14px 0 4px">New chat</button>
-  <div id="chats"></div>
-</aside>
+
 <aside class="panel" id="connPanel" aria-label="Connectors">
   <button class="ghost close" id="closeConn">Close</button>
   <h2>Connectors</h2>
@@ -524,7 +564,8 @@ async function ask(q, opt){
     history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart}, steps, traces: slim(traces)});
     history = history.slice(-40).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
     store.set('moneyai.history', history);
-    saveChat();
+    setTitle();
+    saveChat().then(loadChats);
   };
   try{
     await ready;
@@ -570,7 +611,7 @@ async function loadLearned(){
   const d = await api.learned().catch(()=>null);
   if(!d){ $('#learned').innerHTML = '<p class="err">Could not load.</p>'; return; }
   const cases = d.cases || [];
-  $('#openLearned').textContent = 'Learned' + (cases.length ? ' · ' + cases.length : '');
+  const lc = $('#learnedCount'); lc.hidden = !cases.length; lc.textContent = cases.length;
   $('#learned').innerHTML =
     `<h3><i style="background:var(--read)"></i>Lessons from particular questions</h3>` + (cases.length ? `<ul>${cases.map(c=>`<li class="lesson${c.taught ? ' you' : ''}">${esc(c.lesson)}<div class="foot"><span>${c.taught ? 'You taught this' : 'Caught by its own check'}${c.n > 1 ? ' · ' + c.n + ' times' : ''}</span><button class="ghost" data-id="${esc(c.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">None yet. When its check catches a mistake, or you teach it, the lesson shows here.</p>') +
     `<h3><i style="background:var(--think)"></i>About you (/remember)</h3>` + ((d.profile || []).length ? `<ul style="list-style:none;padding:0">${d.profile.map(p=>`<li class="lesson you">${esc(p.text)}<div class="foot"><span>Given to every answer</span><button class="ghost" data-id="${esc(p.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">Nothing yet. Type <code>/remember I live in Pune</code>.</p>') +
@@ -581,7 +622,8 @@ async function loadLearned(){
     `<h3><i style="background:var(--think)"></i>Your own rules</h3>` + ((d.yours || []).length ? `<ul>${d.yours.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : '') + (d.rulesFile ? `<p class="sub">Add lines starting with “- ” to <code>${esc(d.rulesFile)}</code></p>` : '<p class="sub">Kept on your Mac (~/.money-ai/rules.md).</p>');
   $('#learned').querySelectorAll('[data-id]').forEach(b=>b.onclick = async () => { await api.forget(b.dataset.id); loadLearned(); });
 }
-const pill = (id, text, cls) => { const p = $(id); p.hidden = false; p.className = 'pill ' + (cls || ''); p.innerHTML = (/model/.test(cls || '') ? '✦ ' : '<i></i>') + esc(text); };
+const pill = (id, text, cls) => { const p = $(id); p.hidden = false; p.className = 'pill ' + (cls || ''); p.innerHTML = (/model/.test(cls || '') ? '✦ ' : '<i></i>') + esc(text);
+  $('#sbStatus').textContent = [$('#stWhere').textContent, $('#stModel').hidden ? '' : $('#stModel').textContent.replace('✦ ', '')].filter(Boolean).join(' · '); };
 const showModel = (text, ok) => { pill('#stModel', text, 'model'); $('#stModel').title = 'The AI model that answers' + (ok ? '' : ' (not set up)'); };
 
 /* ---------------------------------------------------------------- which way to answer */
@@ -715,6 +757,25 @@ async function pdfText(file){
   for(let i = 1; i <= Math.min(doc.numPages, 150); i++){ const c = await (await doc.getPage(i)).getTextContent(); pages.push('[page ' + i + '] ' + c.items.map(x=>x.str + (x.hasEOL ? '\n' : ' ')).join('')); }
   return pages.join('\n\n');
 }
+// Excel (each sheet as a table), Word (its text), PowerPoint (each slide's text) — read here with free libraries
+const LIB = 'https://cdnjs.cloudflare.com/ajax/libs/';
+async function sheets(file){
+  if(typeof XLSX === 'undefined') await loadScript(LIB + 'xlsx/0.18.5/xlsx.full.min.js');
+  const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), {type: 'array', cellDates: true});
+  return wb.SheetNames.map(n=>({name: file.name.replace(/\.[^.]+$/, '') + (wb.SheetNames.length > 1 ? ' — ' + n : '') + '.csv', text: XLSX.utils.sheet_to_csv(wb.Sheets[n], {blankrows: false})})).filter(x=>x.text.trim());
+}
+async function docxText(file){
+  if(typeof mammoth === 'undefined') await loadScript(LIB + 'mammoth/1.6.0/mammoth.browser.min.js');
+  return (await mammoth.extractRawText({arrayBuffer: await file.arrayBuffer()})).value;
+}
+async function pptxText(file){
+  if(typeof JSZip === 'undefined') await loadScript(LIB + 'jszip/3.10.1/jszip.min.js');
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const slides = Object.keys(zip.files).filter(n=>/^ppt\/slides\/slide\d+\.xml$/.test(n)).sort((a, b)=>+a.match(/\d+/)[0] - +b.match(/\d+/)[0]);
+  const out = [];
+  for(const n of slides){ const x = await zip.files[n].async('string'); out.push('[slide ' + n.match(/\d+/)[0] + '] ' + Array.from(x.matchAll(/<a:t>([^<]*)<\/a:t>/g)).map(m=>m[1]).join(' ')); }
+  return out.join('\n');
+}
 function showFiles(){
   const box = $('#files'); box.hidden = !attachments.length;
   box.innerHTML = attachments.map((a, i)=>`<span class="fchip${a.busy ? ' busy' : ''}">${a.thumb ? `<img src="${a.thumb}" alt="">` : a.image !== undefined ? '🖼' : '📄'} ${esc(a.name.length > 40 ? '…' + a.name.slice(-38) : a.name)} <small>${a.busy ? 'reading…' : a.err ? esc(a.err) : a.image ? 'picture' : Math.max(1, Math.round(a.text.length / 1000)) + 'k chars'}</small><button type="button" data-i="${i}" aria-label="Remove">×</button></span>`).join('');
@@ -760,10 +821,15 @@ $('#folderIn').onchange = async () => {
 $('#fileIn').onchange = async () => {
   for(const f of Array.from($('#fileIn').files).slice(0, 10 - attachments.length)){
     if(/^image\//.test(f.type)){ await addImages([f]); continue; }
+    if(/\.(xlsx|xls|xlsm|ods)$/i.test(f.name)){
+      const a = {name: f.name, text: '', busy: true}; attachments.push(a); showFiles();
+      try{ const list = await sheets(f); attachments.splice(attachments.indexOf(a), 1, ...list.map(x=>({name: x.name, text: x.text}))); if(!list.length) throw new Error('empty'); }catch(e){ a.err = String(e.message || e).slice(0, 40); a.busy = false; }
+      showFiles(); continue;
+    }
     const a = {name: f.name, text: '', busy: true}; attachments.push(a); showFiles();
     try{
       if(f.size > 25e6) throw new Error('too big');
-      a.text = /\.pdf$/i.test(f.name) || f.type === 'application/pdf' ? await pdfText(f) : await f.text();
+      a.text = /\.pdf$/i.test(f.name) || f.type === 'application/pdf' ? await pdfText(f) : /\.docx$/i.test(f.name) ? await docxText(f) : /\.pptx$/i.test(f.name) ? await pptxText(f) : await f.text();
       if(!a.text.trim()) throw new Error(/\.pdf$/i.test(f.name) ? 'no text (a scanned PDF?)' : 'empty');
     }catch(e){ a.err = String(e.message || e).slice(0, 40); }
     a.busy = false; showFiles();
@@ -865,14 +931,26 @@ async function openChat(id){
   goal = x.goal || ''; store.set('ai.goal', goal); showGoal();
   $('#turns').innerHTML = ''; $('#hello').hidden = history.length > 0;
   history.forEach(h=>{ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); });
-  openChats(false); toast('Resumed: ' + String(x.title || '').slice(0, 50));
+  openChats(false); setTitle(); drawChats(); toast('Resumed: ' + String(x.title || '').slice(0, 50));
   const last = $('#turns').lastElementChild; if(last) last.scrollIntoView({block: 'start'});
 }
 const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
-async function loadChats(){
-  const list = await listChats(), box = $('#chats');
-  box.innerHTML = list.length ? list.map(c=>`<div class="chat${c.id === sessionId ? ' cur' : ''}" data-id="${esc(c.id)}"><span class="ct"><b>${esc(c.title || 'Untitled')}</b><small>${c.turns} question${c.turns === 1 ? '' : 's'} · ${esc(ago(c.updated))}${c.source === 'terminal' ? ' · from the terminal' : ''}</small></span><button class="del" type="button" title="Delete this chat" data-del="${esc(c.id)}">×</button></div>`).join('')
-    : '<p class="sub">No chats yet.</p>';
+// the chat list in the sidebar: newest first, grouped by day, searchable
+let chatCache = [];
+const dayGroup = iso => { const d = new Date(iso), now = new Date(), start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = (start - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000;
+  return diff <= 0 ? 'Today' : diff === 1 ? 'Yesterday' : diff < 7 ? 'Previous 7 days' : diff < 30 ? 'Previous 30 days' : 'Older'; };
+function drawChats(){
+  const f = ($('#chatSearch').value || '').trim().toLowerCase(), box = $('#chats');
+  const list = chatCache.filter(c=>!f || String(c.title || '').toLowerCase().includes(f));
+  if(!list.length){ box.innerHTML = `<p class="sub" style="padding:8px">${f ? 'No chat matches.' : 'Your chats will be listed here.'}</p>`; return; }
+  let last = '', html = '';
+  for(const c of list){
+    const g = dayGroup(c.updated);
+    if(g !== last){ html += `<h6>${g}</h6>`; last = g; }
+    html += `<div class="chat${c.id === sessionId ? ' cur' : ''}" data-id="${esc(c.id)}" title="${esc(c.title || '')}${c.source === 'terminal' ? ' (from the terminal)' : ''}"><span class="ct">${esc(c.title || 'Untitled')}</span>${c.source === 'terminal' ? '<span class="src" title="From the terminal">⌘</span>' : ''}<button class="del" type="button" aria-label="Delete this chat" data-del="${esc(c.id)}">×</button></div>`;
+  }
+  box.innerHTML = html;
   box.querySelectorAll('.chat').forEach(el=>el.onclick = e => { if(e.target.closest('.del')) return; openChat(el.dataset.id); });
   box.querySelectorAll('[data-del]').forEach(b=>b.onclick = async () => {
     const id = b.dataset.del;
@@ -882,15 +960,20 @@ async function loadChats(){
     loadChats();
   });
 }
+async function loadChats(){ chatCache = await listChats(); drawChats(); }
+$('#chatSearch').oninput = drawChats;
 function newChat(quiet){
   sessionId = newId(); store.set('ai.session', sessionId);
   history = []; store.set('moneyai.history', []); goal = ''; store.set('ai.goal', ''); showGoal();
-  $('#turns').innerHTML = ''; $('#hello').hidden = false; openChats(false);
-  if(!quiet) toast('New chat — the last one is in Chats');
+  $('#turns').innerHTML = ''; $('#hello').hidden = false; openChats(false); setTitle();
+  drawChats(); $('#q').focus();
+  if(!quiet) toast('New chat — the last one is in the list');
 }
-const openChats = on => { $('#chatsPanel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadChats(); };
-$('#openChats').onclick = () => openChats(true);
-$('#closeChats').onclick = () => openChats(false);
+const setTitle = () => { $('#chatTitle').textContent = history.length ? history[0].q : 'New chat'; document.title = history.length ? String(history[0].q).slice(0, 50) + ' — AI' : 'AI'; };
+// on a phone the sidebar slides in; on a wide screen it is always there
+const openChats = on => { document.body.classList.toggle('sbOpen', !!on && innerWidth <= 900); $('#scrim').classList.toggle('open', !!on && innerWidth <= 900); if(on) loadChats(); };
+$('#sbOpen').onclick = () => openChats(true);
+$('#sbClose').onclick = () => openChats(false);
 $('#newChat').onclick = () => newChat();
 
 /* ---------------------------------------------------------------- connectors: what it may use */
@@ -963,10 +1046,10 @@ $('#logout').onclick = () => { try{ sessionStorage.removeItem(SESSION); }catch(_
 let started = false, ready = null;
 function start(){
   if(started) return; started = true;
-  try{ $('#whoName').textContent = sessionStorage.getItem('ai.user') || 'you'; }catch(_){}
+  try{ const u = sessionStorage.getItem('ai.user') || 'you'; $('#whoName').textContent = u; $('#avatarLetter').textContent = u.slice(0, 1).toUpperCase(); }catch(_){}
   // the conversation so far comes back after a reload
   history.forEach(h=>{ if(h && h.answer){ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); } });
-  ready = detect(); showGoal(); $('#q').focus();
+  ready = detect(); showGoal(); setTitle(); ready.then(loadChats); $('#q').focus();
 }
 if(signedIn()) start(); else { $('#login').hidden = false; $('#lu').focus(); }
 </script>

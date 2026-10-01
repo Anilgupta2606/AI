@@ -329,10 +329,23 @@ export const PRESETS = [
   {name: 'Books', description: 'Find books: title, author, first published year (query: title or author)', url: 'https://openlibrary.org/search.json?limit=5&fields=title,author_name,first_publish_year,subject&q={query}'},
   {name: 'GitHub', description: 'Find open-source code projects: name, stars, description (query: what the project does)', url: 'https://api.github.com/search/repositories?per_page=5&q={query}'},
   {name: 'Hacker News', description: 'What programmers are discussing: stories and links (query: a topic)', url: 'https://hn.algolia.com/api/v1/search?hitsPerPage=6&query={query}'},
+  {name: 'Weather', description: 'Weather now and the next 3 days for a place: temperature, rain, wind, humidity (query: a city, like Pune)', url: 'https://wttr.in/{query}?format=j1'},
+  {name: 'News', description: 'Latest news headlines with dates and links from Google News (query: a topic or name)', url: 'https://news.google.com/rss/search?hl=en-IN&gl=IN&ceid=IN:en&q={query}'},
+  {name: 'Research papers', description: 'Scientific papers: title, year, citations, DOI, from OpenAlex (query: a topic)', url: 'https://api.openalex.org/works?per-page=6&select=title,publication_year,doi,cited_by_count,primary_location&search={query}'},
+  {name: 'Stack Overflow', description: 'Programming questions and how many answers they have (query: the problem in a few words)', url: 'https://api.stackexchange.com/2.3/search/advanced?order=desc&sort=relevance&site=stackoverflow&pagesize=6&q={query}'},
+  {name: 'Crypto prices', description: 'Live crypto prices in rupees and dollars with the 24-hour change (query: coin ids, comma-separated, like bitcoin,ethereum)', url: 'https://api.coingecko.com/api/v3/simple/price?vs_currencies=inr,usd&include_24hr_change=true&ids={query}'},
+  {name: 'Public holidays', description: 'Public holidays of a country in a year (query: YEAR/COUNTRY-CODE, like 2026/US or 2026/GB; India is not covered — search the web for Indian holidays)', url: 'https://date.nager.at/api/v3/PublicHolidays/{query}'},
+  {name: 'Places', description: 'Where a place is: full address, area, coordinates, from OpenStreetMap (query: a place or address)', url: 'https://nominatim.openstreetmap.org/search?format=json&limit=3&addressdetails=1&q={query}'},
+  {name: 'Python packages', description: 'A Python package on PyPI: latest version, summary, links (query: the package name)', url: 'https://pypi.org/pypi/{query}/json'},
+  {name: 'npm packages', description: 'A JavaScript package on npm: latest version, description, dependencies (query: the package name)', url: 'https://registry.npmjs.org/{query}/latest'},
+  {name: 'Similar words', description: 'Words with a similar meaning (synonyms) for writing (query: a word or phrase)', url: 'https://api.datamuse.com/words?max=15&ml={query}'},
 ];
 export function getConnectors(){
   const saved = readJson(CONNECTORS, null);
-  if(saved && Array.isArray(saved.list)) return saved.list;
+  if(saved && Array.isArray(saved.list)){
+    const have = new Set(saved.list.map(c=>c.name));
+    return saved.list.concat(PRESETS.filter(p=>!have.has(p.name)).map(c=>Object.assign({on: true, preset: true}, c)));
+  }
   return PRESETS.map(c=>Object.assign({on: true, preset: true}, c));
 }
 export function saveConnectors(list){
@@ -342,7 +355,8 @@ export function saveConnectors(list){
   return clean;
 }
 export async function callConnector(c, query){
-  const url = c.url.replace('{query}', encodeURIComponent(String(query).trim().slice(0, 300)));
+  const q = String(query).trim().slice(0, 300);
+  const url = c.url.replace('{query}', /\/\{query\}$/.test(c.url) && /^[\w./-]+$/.test(q) ? q : encodeURIComponent(q).replace(/%2C/g, ','));
   if(Local.isPrivate(url)) throw new Error('That address is inside your network — not called');
   const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), 15000);
   try{
@@ -351,6 +365,10 @@ export async function callConnector(c, query){
     if(!r.ok) throw new Error(c.name + ' answered ' + r.status);
     let text = body;
     if(/json/.test(type)){ try{ text = JSON.stringify(JSON.parse(body)); }catch(e){} }
+    else if(/xml|rss/.test(type) || /^\s*<\?xml/.test(body)){
+      const items = Array.from(body.matchAll(/<item>([\s\S]*?)<\/item>/g)).slice(0, 10).map(m=>{ const g = t => ((new RegExp('<' + t + '>([\\s\\S]*?)</' + t + '>')).exec(m[1]) || [])[1] || ''; return '- ' + g('title').replace(/<!\[CDATA\[|\]\]>/g, '') + ' (' + g('pubDate').slice(0, 16) + ') ' + g('link'); });
+      text = items.length ? items.join('\n') : body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    }
     else if(/html/.test(type)) text = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
     return {url, text: text.slice(0, 8000)};
   }finally{ clearTimeout(t); }

@@ -55,7 +55,7 @@ Everything the AI can do and every setting. In the terminal: `ai help`, or `/hel
 |---|---|
 | `~/.money-ai/config.json` | Keys (search backups, AI services), cloud on/off, switched-off tools. |
 | `~/.money-ai/rules.md` | Your rules — one per line starting with "- ". Edit freely. |
-| `~/.money-ai/connectors.json` | Your data connectors (Wikipedia, Dictionary, Exchange rates, Books, GitHub, Hacker News, yours). |
+| `~/.money-ai/connectors.json` | Your data connectors: Wikipedia, Dictionary, Exchange rates, Books, GitHub, Hacker News, Weather, News, Research papers, Stack Overflow, Crypto prices, Public holidays, Places, Python packages, npm packages, Similar words — and yours. |
 | `~/.money-ai/store.json` | Its memory: lessons, mistakes, kept answers, what you asked it to remember. |
 | `~/.money-ai/sessions/` | Your chats (the page's and the terminal's), the newest 100. |
 | `~/.money-ai/workspace/` | Where code it writes is run (in a sandbox: no internet, no files outside it). The last 20 runs. |
@@ -80,5 +80,6 @@ Everything the AI can do and every setting. In the terminal: `ai help`, or `/hel
 | `Rules` | Every draft is checked (R1–R11: search what changes, cite what was read, numbers from sources, sums right, dates past/future…) and sent back to fix. |
 | `Code` | Code in an answer is run before you see it; any "Output" shown is what really printed. |
 | `Pictures` | On the page: 📎 → Images (or Take a photo on a phone). gemma3 on this Mac describes it and reads its text; on a phone, Gemini. Check exact figures — small models can misread a digit. |
-| `Files and folders` | On the page: 📎 → Files (PDF, text, CSV, code) or Folder (its text and code files, up to 40). |
+| `Files and folders` | On the page: 📎 → Files (PDF, Excel, Word, PowerPoint, CSV, text, code) or Folder (its text and code files, up to 40). Each Excel sheet becomes a table. |
+| `Analysing tables` | Every table gets an exact summary worked out in code: totals, averages, and totals per category and per month. Its files are also in the code sandbox, so it can run Python on the real data. |
 | `Learning` | Mistakes caught become lessons for questions like them; your corrections, 👍 answers and the weekly self-exam too. |

@@ -27,6 +27,7 @@ Work like a careful researcher:
 - Search snippets can be old or wrong: before answering a factual question, open the most relevant page or two and confirm.
 - For general explanations you know well (what something is, how it works), you may answer directly.
 - You can write and build code yourself — nothing needs to exist on the internet first. When asked for a program: write it, then test it with run_code (python, javascript, c or cpp); if it fails or the output is wrong, read the error, fix the code and run it again (up to 3 tries) — the way a programmer works. For a language that cannot run here (like Java), write it carefully and test the same logic in python if useful. Use web_search only to check how a library or API is used. Then answer with the final code in a fenced Markdown block with its language (\`\`\`python … \`\`\`), the output it produced, and a short explanation. Never say you cannot write code.
+- Files the user attached are in run_code's folder by the name given (open('sales.csv')). To analyse a table (totals, averages, top items, trends, filters), write Python with the csv module (no pandas) and run it — do not add up numbers by eye; a table's exact summary is given at its top. For a document, quote the parts you use.
 - Format answers in Markdown: start with the answer itself (not "The page confirms…" or "Based on my search…"), then short paragraphs, "- " lists for steps or points, **bold** for the key figure.
 - For markets and shares (an index, a stock, crypto, gold, a currency) — prices, trend, technical analysis, "will it fall or rise", "what do you think" — call market_analysis: it fetches real prices and works out the indicators. Never say you have no market data. Then web_search for the news behind the move. Answer with the trend, the key levels (support, resistance, averages), what the indicators lean to and what would confirm or cancel a further fall or rise. It is analysis, not a promise: no one knows the future, and do not tell the user to buy or sell.
 - Sources disagree sometimes: say so, and prefer the newest and most official.
@@ -47,6 +48,51 @@ function toolsFor(o){
   if(cs.length) list.push({type: 'function', function: {name: 'use_connector', description: 'Ask one of the user\'s connectors (data sources):\n' + cs.map(c=>'- ' + c.name + ': ' + c.description).join('\n'),
     parameters: {type: 'object', properties: {connector: {type: 'string', enum: cs.map(c=>c.name)}, query: {type: 'string', description: 'What to look up, as the connector expects it'}}, required: ['connector', 'query']}}});
   return list;
+}
+/* a table's exact summary: rows, columns, and for each column its total / average / lowest / highest (numbers)
+   or how many different values and the most common ones (text) — so the model never has to add up by eye */
+function tableSummary(text, sep){
+  const rows = [];
+  for(const line of String(text).split(/\r?\n/)){
+    if(!line.trim()) continue;
+    const cells = []; let cur = '', q = false;
+    for(let i = 0; i < line.length; i++){ const ch = line[i];
+      if(q){ if(ch === '"' && line[i + 1] === '"'){ cur += '"'; i++; } else if(ch === '"') q = false; else cur += ch; }
+      else if(ch === '"') q = true; else if(ch === sep){ cells.push(cur); cur = ''; } else cur += ch; }
+    cells.push(cur); rows.push(cells);
+    if(rows.length > 200001) break;
+  }
+  if(rows.length < 2 || rows[0].length < 2) return '';
+  const head = rows[0].map((h, i)=>String(h).trim() || 'column ' + (i + 1)), body = rows.slice(1);
+  const num = v => { const t = String(v).replace(/[₹$€£,\s%]/g, ''); return /^-?\d+(\.\d+)?$/.test(t) ? +t : null; };
+  const fmt = x => Math.abs(x) >= 1000 ? Number(x.toFixed(2)).toLocaleString('en-IN') : String(Number(x.toFixed(4)));
+  const cols = head.map((h, i)=>{
+    const vals = body.map(r=>r[i]).filter(v=>v != null && String(v).trim() !== '');
+    const ns = vals.map(num).filter(v=>v != null);
+    if(vals.length && ns.length >= vals.length * 0.8){ const sum = ns.reduce((a, b)=>a + b, 0); return `- ${h}: numbers (${ns.length}) — total ${fmt(sum)}, average ${fmt(sum / ns.length)}, lowest ${fmt(Math.min(...ns))}, highest ${fmt(Math.max(...ns))}`; }
+    const counts = {}; vals.forEach(v=>{ counts[v] = (counts[v] || 0) + 1; });
+    const top = Object.entries(counts).sort((a, b)=>b[1] - a[1]).slice(0, 5).map(([v, n])=>`${String(v).slice(0, 30)} (${n})`);
+    return `- ${h}: text, ${Object.keys(counts).length} different — most common: ${top.join(', ')}`;
+  });
+  // totals by group: each number column split by each column with few different values (and by month for dates)
+  const numCols = head.map((h, i)=>i).filter(i=>{ const v = body.map(r=>r[i]).filter(x=>x != null && String(x).trim() !== ''); return v.length && v.map(num).filter(x=>x != null).length >= v.length * 0.8; }).slice(0, 3);
+  const groupCols = head.map((h, i)=>i).filter(i=>!numCols.includes(i)).map(i=>{
+    const month = body.every(r=>!r[i] || /^\d{4}-\d{2}-\d{2}|^\d{1,2}[/-]\d{1,2}[/-]\d{2,4}$/.test(String(r[i]).trim()));
+    const key = r => { const v = String(r[i] || '').trim(); if(!month) return v; const m = /^(\d{4})-(\d{2})/.exec(v) || (/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/.exec(v) ? (()=>{ const d = /^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/.exec(v); return [null, (d[3].length === 2 ? '20' + d[3] : d[3]), d[2].padStart(2, '0')]; })() : null); return m ? m[1] + '-' + m[2] : v; };
+    return {i, month, key, n: new Set(body.map(key)).size};
+  }).filter(g=>g.n >= 2 && g.n <= 25 && g.n < body.length);
+  const groups = [];
+  for(const v of numCols){
+    const all = body.map(r=>num(r[v])).filter(x=>x != null), grand = all.reduce((a, b)=>a + b, 0);
+    groups.push(`${head[v]}: grand total ${fmt(grand)} over ${all.length} rows, average per row ${fmt(grand / (all.length || 1))}`);
+    for(const g of groupCols){
+      const t = {}, c = {};
+      body.forEach(r=>{ const x = num(r[v]); if(x == null) return; const k = g.key(r) || '(blank)'; t[k] = (t[k] || 0) + x; c[k] = (c[k] || 0) + 1; });
+      const list = Object.entries(t).sort((a, b)=>g.month ? a[0].localeCompare(b[0]) : b[1] - a[1]);
+      groups.push(`${head[v]} by ${head[g.i]}${g.month ? ' (month)' : ''}${g.month ? '' : ', highest first'}: ` + list.map(([k, x])=>`${k} ${fmt(x)} (${c[k]} row${c[k] === 1 ? '' : 's'}, ${(x / grand * 100).toFixed(1)}%)`).join(' · '));
+    }
+  }
+  return 'TABLE SUMMARY (worked out exactly — use these figures, do not add up yourself): ' + body.length + ' rows × ' + head.length + ' columns\n' + cols.join('\n') + (groups.length ? '\nTotals:\n- ' + groups.join('\n- ') : '');
 }
 export async function runAgent(question, o){
   const step = t => { try{ o.onStep && o.onStep(t); }catch(e){} };
@@ -70,8 +116,12 @@ export async function runAgent(question, o){
     catch(e){ im.text = '(The picture could not be read: ' + e.message + ')'; }
     im.name = im.name + ' (picture — what it shows)';
   }
-  // files the user attached on the page: each a numbered source; a long one sends the parts that answer the question
+  // files the user attached on the page: each a numbered source; a long one sends the parts that answer the question.
+  // A table (CSV, a sheet of Excel) also gets its exact summary worked out here, and every file is in run_code's folder.
+  const safe = n => String(n || 'file').replace(/\.[^.]+$/, m=>m.toLowerCase()).replace(/[^\w.\-]+/g, '_').replace(/_+/g, '_').replace(/^[_.]+/, '').slice(-80) || 'file';
   const attached = (o.attachments || []).map(a=>{
+    if(!a.image && /\.(csv|tsv)$/i.test(a.name)){ const p = tableSummary(a.text, /\.tsv$/i.test(a.name) ? '\t' : ','); if(p) a.text = p + '\n\n' + a.text; }
+    if(!a.image && o.runCode) a.name = a.name + ' — in run_code: open(\'' + safe(a.name) + '\')';
     const t = String(a.text || ''), n = numberOf('file://' + a.name, a.name, t.slice(0, 30000));
     const body = t.length <= 7000 ? t : o.pick(question, t, 16).slice(0, 6000);
     return `[${n}] ${a.name}${t.length > 7000 ? ' (the parts that matter, of ' + t.length + ' characters)' : ''}\n${body}`;
@@ -134,7 +184,7 @@ export async function runAgent(question, o){
     if(name === 'run_code'){
       if(!o.runCode) return 'Running code is not available here.';
       step('▶️ Running ' + String(args.language || 'code') + ' (try ' + (++runs) + ')');
-      const r = await o.runCode({language: args.language, code: args.code, stdin: args.stdin});
+      const r = await o.runCode({language: args.language, code: args.code, stdin: args.stdin, files: (o.attachments || []).filter(a=>!a.image).map(a=>({name: a.name.replace(/ — in run_code:.*$/, ''), text: a.text.replace(/^TABLE SUMMARY[\s\S]*?\n\n/, '')}))});
       lastRun = Object.assign({}, r, {code: String(args.code || '')});
       trace('run', 'Ran ' + (r.language || args.language) + ' — ' + (r.ok ? 'worked' : r.exit === 'timeout' ? 'too slow (stopped)' : 'failed'), {lang: r.language || args.language, code: String(args.code || '').slice(0, 6000), output: r.output, ok: r.ok});
       return (r.ok ? 'It ran (exit 0' : 'It failed (exit ' + r.exit) + (r.ms ? ', ' + r.ms + ' ms' : '') + '). Output:\n' + r.output;
@@ -317,7 +367,7 @@ export async function runAgent(question, o){
           const m = /```[ \t]*(python3?|py|javascript|js|c|cpp|c\+\+)\s*\n([\s\S]*?)```/i.exec(ctext);
           if(!m) break;
           step('▶️ Running the bigger model\'s ' + m[1]);
-          const rr = await o.runCode({language: m[1], code: m[2]});
+          const rr = await o.runCode({language: m[1], code: m[2], files: (o.attachments || []).filter(a=>!a.image).map(a=>({name: a.name.replace(/ — in run_code:.*$/, ''), text: a.text.replace(/^TABLE SUMMARY[\s\S]*?\n\n/, '')}))});
           trace('run', 'Ran ' + (rr.language || m[1]) + ' (cloud model\'s code) — ' + (rr.ok ? 'worked' : 'failed'), {lang: rr.language || m[1], code: m[2].slice(0, 6000), output: rr.output, ok: rr.ok});
           lastRun = rr; runs++;
           if(rr.ok){ if(!/output/i.test(ctext)) ctext += '\n\n**Output when run here:**\n```\n' + rr.output.slice(0, 1500) + '\n```'; break; }
@@ -339,7 +389,7 @@ export async function runAgent(question, o){
       else { const j = /```json\s*([\s\S]*?)```/i.exec(text); if(j){ try{ const o2 = JSON.parse(j[1].replace(/\\'/g, "'")); const a2 = o2.arguments || {}; if(o2.name === 'run_code' && a2.code){ lang = a2.language || 'python'; code = a2.code; text = text.replace(j[0], '```' + lang + '\n' + code.trim() + '\n```'); } }catch(e){} } }
       if(code && !(lastRun && lastRun.code && lastRun.code.trim() === code.trim())){
         step('▶️ Checking the code in the answer');
-        const rr = await o.runCode({language: lang, code});
+        const rr = await o.runCode({language: lang, code, files: (o.attachments || []).filter(a=>!a.image).map(a=>({name: a.name.replace(/ — in run_code:.*$/, ''), text: a.text.replace(/^TABLE SUMMARY[\s\S]*?\n\n/, '')}))});
         runs++; lastRun = Object.assign({}, rr, {code});
         trace('run', 'Ran the code in the answer — ' + (rr.ok ? 'worked' : 'failed'), {lang: rr.language || lang, code: code.slice(0, 6000), output: rr.output, ok: rr.ok});
       }
