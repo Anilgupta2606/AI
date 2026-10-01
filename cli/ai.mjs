@@ -217,6 +217,7 @@ async function main(){
   }
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
+  if(rest[0] === 'serve'){ (await import('./serve.mjs')).serve(); return; }      // the local helper for the website (normally started at login)
   if(rest.length){
     try{ show(await answer(rest.join(' '), o), o); }catch(e){ console.error(red('✗ ' + e.message)); process.exitCode = 1; }
     return;

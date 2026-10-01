@@ -433,18 +433,38 @@ Use only the sources. Copy numbers exactly as the sources give them. Never inven
     return {kind: 'web', text: 'The AI could not settle on an answer. The most relevant passages: ' + bestSentences(question, ps.map((p, i)=>({title: p.title, url: p.url, text: p.passage, rank: i})), 3).map(b=>b.s).join(' '), sources: ps.map(p=>({title: p.title, url: p.url})), provider};
   }
 
-  /* The relay (a small Cloudflare Worker of yours) as search and read functions for deep(), in the browser. */
-  function relay(cfg){
-    if(!cfg || !cfg.url || !cfg.token) return null;
-    const base = String(cfg.url).replace(/\/+$/, '');
+  /* Web search for the apps, in the browser: this Mac's helper first (your SearXNG, pages read on the Mac, no keys),
+     then your Cloudflare relay (Tavily and Jina keys) — on a phone, or when the Mac's helper does not answer. */
+  const LOCAL_HELPER = 'http://127.0.0.1:8899';
+  function one(base, token){
+    base = String(base).replace(/\/+$/, '');
     const call = async path => {
-      const r = await fetch(base + path, {headers: {'x-relay-token': cfg.token}});
-      const d = await r.json().catch(()=>({error: 'The relay answered ' + r.status}));
-      if(!r.ok || d.error) throw new Error(d.error || 'The relay answered ' + r.status);
+      const r = await fetch(base + path, token ? {headers: {'x-relay-token': token}} : {});
+      const d = await r.json().catch(()=>({error: 'It answered ' + r.status}));
+      if(!r.ok || d.error) throw new Error(d.error || 'It answered ' + r.status);
       return d;
     };
     return {search: (q, n) => call('/search?n=' + (n || 8) + '&q=' + encodeURIComponent(q)), read: (url, links) => call('/read?links=' + (links ? 1 : 0) + '&url=' + encodeURIComponent(url)),
       health: () => fetch(base + '/health').then(r=>r.json())};
+  }
+  let localState = null;                       // checked once per page: is this Mac's helper here?
+  async function localHelper(){
+    if(localState === null){
+      localState = (async ()=>{ try{ const r = await Promise.race([fetch(LOCAL_HELPER + '/health'), new Promise((_, rej)=>setTimeout(()=>rej(new Error('slow')), 1500))]); const d = await r.json(); return !!(d && d.ok && d.search && d.search.searxng); }catch(e){ return false; } })();
+    }
+    return localState;
+  }
+  function relay(cfg, o){
+    const cloud = cfg && cfg.url && cfg.token ? one(cfg.url, cfg.token) : null;
+    const local = (o && o.local === false) ? null : one(LOCAL_HELPER, '');
+    const used = [];
+    const chain = name => async (...args) => {
+      if(local && await localHelper()){ try{ const r = await local[name](...args); used.push(name === 'search' ? 'your SearXNG' : 'this Mac'); return r; }catch(e){ if(!cloud) throw e; } }
+      if(cloud){ const r = await cloud[name](...args); used.push(name === 'search' ? (r.provider || 'your relay') : 'your relay'); return r; }
+      throw new Error('No web search here: this device has no Money AI helper, and no relay is set in Setup.');
+    };
+    return {search: chain('search'), read: chain('read'), used, local: ()=>localHelper(),
+      health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
   return {answer, rephrase, deep, relay, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};

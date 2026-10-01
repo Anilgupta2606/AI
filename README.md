@@ -40,6 +40,13 @@ ai                                                   # a conversation
 ai status                                            # what is set up
 ```
 
+## Web search in the apps: this Mac first, the relay as backup
+
+The apps' Ask searches the web through **this Mac's helper** when it is there (`cli/serve.mjs` on 127.0.0.1:8899: your
+SearXNG to search, pages read on the Mac — no keys; started at login by `~/Library/LaunchAgents/com.moneyai.local.plist`;
+`ai serve` runs it by hand), and through **your Cloudflare relay** (Tavily and Jina keys) everywhere else — a phone, or the
+Mac with the helper off. The choice is made by itself on every question.
+
 ## The relay (web search for the apps) — once
 
 1. `cd ~/AI/relay && npx wrangler login` — approve in the browser (your Cloudflare account).
