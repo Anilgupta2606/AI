@@ -7,6 +7,7 @@
      ai -f notes.txt "question" answer from a file (text, markdown, CSV, JSON, HTML) as well as the web
      ai --no-web / --no-ai      only what it knows / only the web's own sentences (no AI)
      ai --json "question"       the answer as JSON (for scripts)
+     ai --cloud "question"      a hard question may be written by a cloud model (keys from ai setup)
      ai setup                   keys for the search services and the AIs (kept in ~/.money-ai/, only on this Mac)
      ai status                  what is set up
      ai rules                   the rules every answer is checked against, yours (~/.money-ai/rules.md) and what it learned
@@ -82,7 +83,10 @@ async function searcher(cfg){
 /* ---------------------------------------------------------------- one question */
 const FILE_TYPES = /\.(txt|md|markdown|csv|tsv|json|html?|xml|log|yaml|yml|ini|js|ts|py|sql)$/i;
 async function answer(question, o){
-  const cfg = config(), {AI, Web} = engine(cfg), S = await searcher(cfg);
+  const cfg = config();
+  // the page's cloud keys, for this one answer only (never written to disk)
+  if(o.cloudKeys) cfg.ai.keys = Object.assign({}, cfg.ai.keys, Object.fromEntries(Object.entries(o.cloudKeys).filter(([k, v])=>/^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/.test(k) && typeof v === 'string' && v.length < 400)));
+  const {AI, Web} = engine(cfg), S = await searcher(cfg);
   const hasAi = AI.aiAvailable() && !o.noAi;
   const step = t => { if(o.onStep) return o.onStep(t); if(o.json || !tty) return; if(/^(?:[🔎📄🧮📂📈]|▶)/u.test(t)) process.stderr.write('\r\x1b[K' + dim('  ' + t) + '\n'); else process.stderr.write('\r\x1b[K' + dim('… ' + t)); };
   const done = () => { if(!o.json && tty && !o.onStep) process.stderr.write('\r\x1b[K'); };
@@ -97,7 +101,13 @@ async function answer(question, o){
   // 1. worked out or looked up exactly (sums, rates, weather, time, meanings, facts) — unless a file is given
   // a follow-up ("and for 10 years?", "what about Bank Nifty?") needs the conversation, so it goes to the model, not the quick tools
   const followUp = (o.history || []).length && /^(and|also|what about|how about|then|so|but|same|now|ok|okay|why|what if)\b|\b(it|that|this|those|them|these|same|above|previous|earlier)\b/i.test(question.trim()) && question.trim().split(/\s+/).length < 14;
-  if(!fileSources.length && !o.deep && !followUp){
+  const attached = (o.attachments || []).length > 0;
+  // an answer you marked 👍 for this same question (settled facts only), unless you ask for it fresh
+  if(!fileSources.length && !followUp && !o.fresh && !attached){
+    const g = Web.findGood(question);
+    if(g){ done(); return {text: g.text, sources: g.sources || [], model: 'Your saved answer', saved: true, by: 'Your saved answer from ' + g.at + ' (you marked it 👍)' + (g.model ? ' · first written by ' + g.model : '')}; }
+  }
+  if(!fileSources.length && !o.deep && !followUp && !attached){
     step('Checking what can be worked out or looked up exactly…');
     const quick = await Web.answer(question, {factsOnly: !!S.any}).catch(()=>null);
     if(quick && quick.kind !== 'not-found' && quick.kind !== 'read'){ done(); return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick); }
@@ -107,7 +117,12 @@ async function answer(question, o){
   if(ollama && !o.noAi && !o.classic){
     let models = [];
     try{ models = ((await (await fetch(ollama.replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); }catch(e){}
-    const model = models.length ? AI.rankModels('ollama', models, 'smart')[0] : null;
+    const general = models.filter(m=>!/coder|embed/i.test(m));
+    const model = general.length ? AI.rankModels('ollama', general, 'smart')[0] : null;
+    // a programming question goes to the coding model when it is on this Mac (better code for its size)
+    const coder = models.find(m=>/coder/i.test(m));
+    const codeQ = /\b(write|build|create|make|implement|fix|debug|refactor)\b[\s\S]{0,40}\b(code|program|script|function|class|app|algorithm|query)\b|\b(python|javascript|java|c\+\+|sql|typescript|bash)\b[\s\S]{0,30}\b(program|code|script|function|query)\b|```/i.test(question);
+    const useModel = codeQ && coder ? coder : model;
     if(model){
       // your search engine not answering: restart it (a few seconds) before any backup is used
       let localUp = await Local.searxngUp();
@@ -123,10 +138,28 @@ async function answer(question, o){
         throw new Error('Your search engine (SearXNG) is not running — start it with:  launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng');
       };
       const read = async (url, links) => { try{ return await Local.read(url, links); }catch(e){ if(cfg.search.jina) return S.read(url, links); throw e; } };
-      const chat = async (messages, tools) => {
-        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model, messages, tools, stream: false, think: false, options: {temperature: 0.2, num_ctx: 12288}})});
+      // streamed, so the answer can be shown as it is written; kept loaded for 30 minutes (no reload between questions)
+      const chat = async (messages, tools, opts) => {
+        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model: useModel, messages, tools, stream: true, think: false, keep_alive: '30m', options: {temperature: 0.2, num_ctx: 12288}})});
         if(!r.ok) throw new Error('The model answered ' + r.status + ': ' + (await r.text()).slice(0, 200));
-        return Object.assign(await r.json(), {model});
+        let content = '', calls = [], buf = '', last = 0;
+        const dec = new TextDecoder();
+        for await (const chunk of r.body){
+          buf += dec.decode(chunk, {stream: true});
+          let i;
+          while((i = buf.indexOf('\n')) >= 0){
+            const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+            if(!line) continue;
+            const j = JSON.parse(line);
+            if(j.error) throw new Error('The model: ' + j.error);
+            const m = j.message || {};
+            if(m.content) content += m.content;
+            if(m.tool_calls) calls = calls.concat(m.tool_calls);
+            if(opts && opts.onDelta && !calls.length && Date.now() - last > 120){ last = Date.now(); opts.onDelta(content); }
+          }
+        }
+        if(opts && opts.onDelta && !calls.length) opts.onDelta(content);
+        return {message: {role: 'assistant', content, tool_calls: calls.length ? calls : undefined}, model: useModel};
       };
       const pick = (q, text, n) => { const b = Web.bestSentences(q, [{title: '', url: '', text, rank: 0}], n); return b.length ? b.map(x=>x.s).join(' ') : String(text).slice(0, 2500); };
       // dates too: "days from today to 8 November 2026", "days between 2026-10-01 and 2026-11-08"
@@ -144,8 +177,10 @@ async function answer(question, o){
         if(d){ const a = dateOf(d[1]), b = dateOf(d[2]); if(a && b){ const n = Math.round((b - a) / 86400000); return `${n} days from ${a.toISOString().slice(0, 10)} to ${b.toISOString().slice(0, 10)}${Math.abs(n) >= 7 ? ' (' + Math.floor(Math.abs(n) / 7) + ' weeks ' + (Math.abs(n) % 7) + ' days)' : ''}.`; } }
         const r = Web.calc(expr) || Web.calc('what is ' + expr); return r ? r.text : null; };
       const ur = userRules();
-      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace,
-        market: (q, tf) => Market.analyse(q, tf), runCode: a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
+      const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments,
+        goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
+        cloud: (o.cloud || o.cloudKeys) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}) : null,
+        market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
   }
@@ -204,7 +239,7 @@ async function status(){
   const cfg = config(), {AI} = engine(cfg), S = await searcher(cfg);
   const up = await Local.searxngUp();
   let localModel = '';
-  try{ const ms = ((await (await fetch(String(cfg.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); localModel = ms.length ? AI.rankModels('ollama', ms, 'smart')[0] : ''; }catch(e){}
+  try{ const ms = ((await (await fetch(String(cfg.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); const gm = ms.filter(m=>!/coder|embed/i.test(m)); localModel = gm.length ? AI.rankModels('ollama', gm, 'smart')[0] : ''; if(ms.some(m=>/coder/i.test(m))) localModel += ' (code: ' + ms.find(m=>/coder/i.test(m)) + ')'; }catch(e){}
   console.log(bold('\nWorks on its own: ') + (up && localModel ? green('yes') + ' — your search engine ' + green('(SearXNG, running)') + ', pages read on this Mac, model ' + green(localModel) + ' on this Mac'
     : yellow((up ? '' : 'SearXNG is not running (launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng). ') + (localModel ? '' : 'No model on this Mac (ollama pull qwen3:4b-instruct).'))));
   console.log(bold('Backups (used only if yours is down): ') + ([cfg.search.tavily && cfg.search.tavily.length ? 'Tavily ×' + cfg.search.tavily.length : '', cfg.search.serpapi ? 'SerpApi' : '', cfg.search.googleKey && cfg.search.googleCx ? 'Google' : ''].filter(Boolean).join(', ') || 'none') + (cfg.search.jina ? ', Jina Reader' : ''));
@@ -229,7 +264,7 @@ async function rules(){
   console.log('');
 }
 
-const cases = () => global.MoneyBrain.lessons({app: 'ai', topic: 'case'}).filter(L=>!L.off).sort((a, b)=>a.first - b.first);
+const cases = () => global.MoneyBrain.lessons({app: 'ai'}).filter(L=>!L.off && (L.topic === 'case' || L.topic === 'good')).sort((a, b)=>a.first - b.first);
 export async function teach(lesson, question){
   const cfg = config(), {Web} = engine(cfg), last = question ? {question} : readJson(LAST, null);
   lesson = String(lesson || '').trim();
@@ -244,15 +279,79 @@ export function learned(){
   const cfg = config(), {Web} = engine(cfg), B = global.MoneyBrain;
   return {rules: Web.RULES, yours: userRules(), rulesFile: RULES_FILE,
     mistakes: B.lessons({app: 'ai', topic: 'mistake'}).filter(L=>!L.off).sort((a, b)=>b.n - a.n).map(L=>({rule: L.key, text: Web.RULES[L.key] || L.key, n: L.n})),
-    cases: cases().map(L=>{ const r = B.recall('ai', 'case', L.key, {min: 0.001}); return {id: L.id, question: L.label || '', lesson: r ? r.value : '', taught: L.why === 'You corrected it', n: L.n}; })};
+    cases: cases().filter(L=>L.topic === 'case').map(L=>{ const r = B.recall('ai', 'case', L.key, {min: 0.001}); return {id: L.id, question: L.label || '', lesson: r ? r.value : '', taught: L.why === 'You corrected it', n: L.n}; }),
+    profile: profile(),
+    saved: cases().filter(L=>L.topic === 'good').map(L=>({id: L.id, question: L.label || ''})),
+    selfexam: readJson(path.join(HOME, 'selfexam.json'), null)};
 }
-export function forgetId(id){ const cfg = config(); engine(cfg); const L = cases().find(x=>x.id === id); if(!L) return false; global.MoneyBrain.forget(id); return true; }
+// 👍 keeps a settled answer for next time; 👎 with what was wrong becomes a lesson for questions like it
+export function feedback({question, good, note, answer}){
+  const cfg = config(), {Web} = engine(cfg);
+  if(good) return {ok: true, saved: Web.saveGood(String(question || ''), answer || {})};
+  global.MoneyBrain.learn('ai', 'mistake', 'you', 'yes', {label: 'Answers you marked wrong', why: String(question || '').slice(0, 120)});
+  if(note && String(note).trim().length >= 8) Web.learnCase(String(question), [{rule: 'you'}], {text: 'For “' + String(question).slice(0, 90) + '”: ' + String(note).trim()});
+  return {ok: true};
+}
+export function forgetId(id){ const cfg = config(); engine(cfg); const L = cases().concat(global.MoneyBrain.lessons({app: 'ai', topic: 'profile'})).find(x=>x.id === id); if(!L) return false; global.MoneyBrain.forget(id); return true; }
 export {answer};
+export async function warm(){
+  const cfg = config(), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
+  if(!host || !m) return false;
+  try{ await fetch(host + '/api/generate', {method: 'POST', body: JSON.stringify({model: m, prompt: '', keep_alive: '30m'})}); return true; }catch(e){ return false; }
+}
 export async function localModel(){
   const cfg = config(), {AI} = engine(cfg), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, '');
   if(!host) return '';
-  try{ const ms = ((await (await fetch(host + '/api/tags')).json()).models || []).map(m=>m.name); return ms.length ? AI.rankModels('ollama', ms, 'smart')[0] : ''; }catch(e){ return ''; }
+  try{ const ms = ((await (await fetch(host + '/api/tags')).json()).models || []).map(m=>m.name); return ms.filter(m=>!/coder|embed/i.test(m)).length ? AI.rankModels('ollama', ms.filter(m=>!/coder|embed/i.test(m)), 'smart')[0] : ''; }catch(e){ return ''; }
 }
+/* ---------------------------------------------------------------- CONNECTORS: data sources it can ask (like plug-ins)
+   Each is a web address with {query} in it; it is called on this Mac, never an address inside your home network.
+   The presets are public and need no key; you can add your own (name, what it is for, the address). */
+const CONNECTORS = path.join(HOME, 'connectors.json');
+export const PRESETS = [
+  {name: 'Wikipedia', description: 'A short summary of a topic or person from Wikipedia (query: the exact article title)', url: 'https://en.wikipedia.org/api/rest_v1/page/summary/{query}'},
+  {name: 'Dictionary', description: 'Meanings of a word, with examples, from Wiktionary (query: the word)', url: 'https://en.wiktionary.org/api/rest_v1/page/definition/{query}'},
+  {name: 'Exchange rates', description: 'Today\'s exchange rates from one currency to all others (query: a currency code like USD or INR)', url: 'https://open.er-api.com/v6/latest/{query}'},
+  {name: 'Books', description: 'Find books: title, author, first published year (query: title or author)', url: 'https://openlibrary.org/search.json?limit=5&fields=title,author_name,first_publish_year,subject&q={query}'},
+  {name: 'GitHub', description: 'Find open-source code projects: name, stars, description (query: what the project does)', url: 'https://api.github.com/search/repositories?per_page=5&q={query}'},
+  {name: 'Hacker News', description: 'What programmers are discussing: stories and links (query: a topic)', url: 'https://hn.algolia.com/api/v1/search?hitsPerPage=6&query={query}'},
+];
+export function getConnectors(){
+  const saved = readJson(CONNECTORS, null);
+  if(saved && Array.isArray(saved.list)) return saved.list;
+  return PRESETS.map(c=>Object.assign({on: true, preset: true}, c));
+}
+export function saveConnectors(list){
+  const clean = (Array.isArray(list) ? list : []).slice(0, 30).map(c=>({name: String(c.name || '').trim().slice(0, 40), description: String(c.description || '').trim().slice(0, 240), url: String(c.url || '').trim().slice(0, 500), on: c.on !== false, preset: !!c.preset}))
+    .filter(c=>/^[\w .&'-]{2,40}$/.test(c.name) && /^https:\/\/[^\s]+\{query\}/.test(c.url) && c.description.length >= 5 && !Local.isPrivate(c.url.replace('{query}', 'x')));
+  writeJson(CONNECTORS, {list: clean});
+  return clean;
+}
+export async function callConnector(c, query){
+  const url = c.url.replace('{query}', encodeURIComponent(String(query).trim().slice(0, 300)));
+  if(Local.isPrivate(url)) throw new Error('That address is inside your network — not called');
+  const ctl = new AbortController(), t = setTimeout(()=>ctl.abort(), 15000);
+  try{
+    const r = await _fetch(url, {headers: {'user-agent': 'money-ai/1.0 (+https://github.com/Anilgupta2606/AI)', accept: 'application/json, text/plain;q=0.9, */*;q=0.5'}, signal: ctl.signal});
+    const type = r.headers.get('content-type') || '', body = await r.text();
+    if(!r.ok) throw new Error(c.name + ' answered ' + r.status);
+    let text = body;
+    if(/json/.test(type)){ try{ text = JSON.stringify(JSON.parse(body)); }catch(e){} }
+    else if(/html/.test(type)) text = body.replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    return {url, text: text.slice(0, 8000)};
+  }finally{ clearTimeout(t); }
+}
+/* what you asked it to remember about you (/remember), and your rules (/rule) */
+export function remember(text){ engine(config()); text = String(text || '').trim().slice(0, 300); if(text.length < 3) return false; global.MoneyBrain.learn('ai', 'profile', text.toLowerCase().slice(0, 80), text, {label: text, weight: 3}); return true; }
+const profile = () => global.MoneyBrain.lessons({app: 'ai', topic: 'profile'}).filter(L=>!L.off).map(L=>({id: L.id, text: L.label || L.key}));
+export function addRule(text){
+  text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  if(text.length < 5) return false;
+  if(!fs.existsSync(RULES_FILE)) writeJson(path.join(HOME, '.keep'), {});
+  fs.appendFileSync(RULES_FILE, (fs.existsSync(RULES_FILE) && !fs.readFileSync(RULES_FILE, 'utf8').endsWith('\n') ? '\n' : '') + '- ' + text + '\n', {mode: 0o600});
+  return true;
+}
+
 /* the published page, on this Mac, swaps lessons with the terminal's memory (the page's sync then carries them to your phone) */
 const onlyAi = b => ({lessons: Object.fromEntries(Object.entries((b && b.lessons) || {}).filter(([, L])=>L && L.app === 'ai')),
   forgotten: Object.fromEntries(Object.entries((b && b.forgotten) || {}).filter(([id])=>id.startsWith('ai:'))), updatedAt: (b && b.updatedAt) || 0});
@@ -279,7 +378,8 @@ async function main(){
     else if(a === '--no-ai') o.noAi = true;
     else if(a === '--deep') o.deep = true;
     else if(a === '--classic') o.classic = true;
-    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 16).join('\n').replace(/^\s*/gm, '')); return; }
+    else if(a === '--cloud') o.cloud = true;
+    else if(a === '-h' || a === '--help'){ console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 17).join('\n').replace(/^\s*/gm, '')); return; }
     else rest.push(a);
   }
   if(rest[0] === 'setup') return setup();

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /* The model's own exam, end to end through the `ai` command (search, reading, calculator, rules, memory):
-     node test/exam/model.exam.mjs [first|general|retest|all] [out.json]
+     node test/exam/model.exam.mjs [first|general|retest|all|rotate] [out.json] [--learn]   (rotate --learn: the weekly self-exam)
    Fixed facts and sums are marked automatically; "live" questions have keys checked by hand on the day they were
    set (the date is kept with them) — after that, read the answers and their sources instead. */
 import {execFile} from 'child_process';
@@ -73,9 +73,34 @@ const RETEST = [
   {kind: 'new', q: 'Have the 2026 Commonwealth Games taken place yet?', key: null, set: '2026-10-01'},
   {kind: 'new', q: 'What is the latest version of Android?', key: null, set: '2026-10-01'},
 ];
-const SETS = {first: FIRST, general: GENERAL, retest: RETEST, all: FIRST.concat(GENERAL)};
-const setName = SETS[process.argv[2]] ? process.argv[2] : 'first';
-const outFile = SETS[process.argv[2]] ? process.argv[3] : process.argv[2];
+// the right answers to the settled questions — what a miss is taught (answers about now are not, they change)
+const FACTS = {
+  'What is the capital of Australia?': 'The capital of Australia is Canberra.',
+  'Who wrote the Hindi novel Godan?': 'Godan was written by Munshi Premchand (1936).',
+  'How tall is Mount Everest in metres?': 'Mount Everest is 8,848.86 m high (the 2020 China–Nepal survey).',
+  'In which year did Chandrayaan-3 land on the Moon?': 'Chandrayaan-3 landed near the Moon\'s south pole on 23 August 2023.',
+  'What is the boiling point of water at sea level in Fahrenheit?': 'Water boils at 212 °F (100 °C) at sea level.',
+  'Who painted the Mona Lisa?': 'Leonardo da Vinci painted the Mona Lisa.',
+  'What is the chemical symbol for gold?': 'The chemical symbol for gold is Au.',
+  'How many bones are in the adult human body?': 'An adult human body has 206 bones.',
+  'What is the longest river in Africa?': 'The Nile is the longest river in Africa.',
+  'In which year did the Berlin Wall fall?': 'The Berlin Wall fell on 9 November 1989.',
+  'Who discovered penicillin?': 'Alexander Fleming discovered penicillin in 1928.',
+  'What is the speed of light in kilometres per second?': 'Light travels at 299,792.458 km per second in a vacuum.',
+  'What is the largest ocean on Earth?': 'The Pacific is the largest ocean.',
+  'Bharat ki rajdhani kya hai?': 'Bharat ki rajdhani Nayi Dilli (New Delhi) hai.',
+  'What day of the week was 15 August 1947?': '15 August 1947 was a Friday.',
+  'Explain in two sentences why the sky is blue.': 'Air molecules scatter short (blue) wavelengths of sunlight much more than long ones (Rayleigh scattering), so blue light reaches us from every part of the sky.',
+};
+// the weekly self-exam: 12 questions, a different slice of all of them each week
+const ALL = FIRST.concat(GENERAL, RETEST.filter(x=>x.kind !== 'missed'));
+const week = Math.floor(Date.now() / (7 * 86400000));
+const ROTATE = Array.from({length: Math.min(12, ALL.length)}, (_, i)=>ALL[(week * 12 + i) % ALL.length]);
+const SETS = {first: FIRST, general: GENERAL, retest: RETEST, all: ALL, rotate: ROTATE};
+const LEARN = process.argv.includes('--learn');
+const args = process.argv.slice(2).filter(a=>a !== '--learn');
+const setName = SETS[args[0]] ? args[0] : 'first';
+const outFile = SETS[args[0]] ? args[1] : args[0];
 const Q = SETS[setName];
 const run = (q, file) => new Promise(res=>{
   const t = Date.now();
@@ -94,3 +119,12 @@ for(const x of Q){
 const marked = results.filter(r=>r.pass !== null);
 console.log('\nMarked: ' + marked.filter(r=>r.pass).length + ' / ' + marked.length + ' · by hand: ' + (results.length - marked.length) + ' · average ' + Math.round(results.reduce((t, r)=>t + r.secs, 0) / results.length) + 's');
 if(outFile) fs.writeFileSync(outFile, JSON.stringify(results, null, 2));
+// learning from the misses: the right answer when it is known, else a reminder to look it up and check
+if(LEARN){
+  const ai = await import(path.join(HERE, '../../cli/ai.mjs'));
+  const misses = results.filter(r=>r.pass === false);
+  for(const r of misses) await ai.teach(FACTS[r.q] || 'The weekly self-exam marked this answer wrong on ' + new Date().toISOString().slice(0, 10) + ': search, read a page and check the facts before answering.', r.q);
+  const summary = {date: new Date().toISOString().slice(0, 10), set: setName, right: marked.filter(r=>r.pass).length, total: marked.length, learned: misses.length, misses: misses.map(r=>r.q)};
+  fs.writeFileSync(path.join(process.env.HOME, '.money-ai', 'selfexam.json'), JSON.stringify(summary, null, 2), {mode: 0o600});
+  console.log('Learned from ' + misses.length + ' miss' + (misses.length === 1 ? '' : 'es') + '.');
+}

@@ -386,9 +386,11 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       }));
       got.forEach(({r, page})=>{ add(page.title || r.title, page.url || r.url, page.content || r.snippet); (page.links || []).forEach(l=>{ if(l.url && links.length < 400) links.push(Object.assign({from: page.url}, l)); }); });
     };
+    // what is already in hand comes first: an analysis worked out here (prices), the user's own files
+    (o.extra || []).forEach(x=>add(x.title, x.url, x.text));
     let query = question + (timely && !/\b20\d\d\b/.test(question) ? ' ' + month : ''), provider = '';
     step('Searching the web…');
-    const first = await o.search(query, 8);
+    const first = o.search ? await o.search(query, 8).catch(e=>{ if(sources.length) return {provider: 'your files', results: []}; throw e; }) : {provider: 'your files', results: []};
     provider = first.provider;
     // the search engine's own answer boxes are sources too
     (first.results || []).filter(r=>/^Google (answer|knowledge)/.test(r.title) && r.snippet).forEach(r=>add(r.title, r.url || 'google', r.snippet));
@@ -413,7 +415,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       const ps = passagesOf();
       const ls = relevantLinks();
       const before = casesFor(question).concat([timingNote(question, today)]).filter(Boolean);
-      const prompt = 'Question: ' + question + (before.length ? '\n\nBefore you answer:\n- ' + before.join('\n- ') : '') + '\n\nSources:\n' + ps.map((p, i)=>`[${i + 1}] ${p.title} — ${p.url}\n${p.passage}`).join('\n\n') +
+      const prompt = 'Question: ' + question + (o.context ? '\n\nAbout the user and this conversation:\n' + o.context : '') + (before.length ? '\n\nBefore you answer:\n- ' + before.join('\n- ') : '') + '\n\nSources:\n' + ps.map((p, i)=>`[${i + 1}] ${p.title} — ${p.url}\n${p.passage}`).join('\n\n') +
         (ls.length && round < 2 ? '\n\nLinks found inside those pages:\n' + ls.map(l=>'- ' + l.text + ' — ' + l.url).join('\n') : '');
       step(round ? 'Thinking again with more to read…' : 'Thinking over ' + ps.length + ' sources…');
       const r = await o.chat(DEEP_SYSTEM(today), [{role: 'user', content: prompt}], {maxTokens: 900});
@@ -627,6 +629,24 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       // "it has not happened yet" stops being true on the day: such a lesson ends then
       .filter(t=>{ const m = /the event \((\d{4}-\d{2}-\d{2})\) was still ahead/.exec(t); return t && !(m && m[1] <= (o && o.today || new Date().toISOString().slice(0, 10))); });
   }
+  /* GOOD ANSWERS you marked 👍 — kept for questions whose answer does not change (who painted the Mona Lisa, how to
+     reverse a string), and given straight back when the same question comes again. Answers about now are not kept. */
+  function saveGood(question, out){
+    if(typeof MoneyBrain === 'undefined' || isTimely(question) || !out || !out.text) return false;
+    const kw = keyWords(question);
+    if(kw.length < 2) return false;
+    MoneyBrain.learn('ai', 'good', kw.join(' '), JSON.stringify({q: String(question).slice(0, 300), text: String(out.text).slice(0, 8000), sources: (out.sources || []).slice(0, 8), model: out.model || '', at: new Date().toISOString().slice(0, 10)}), {label: String(question).slice(0, 120), weight: 3});
+    return true;
+  }
+  function findGood(question){
+    if(typeof MoneyBrain === 'undefined' || isTimely(question)) return null;
+    const kw = keyWords(question);
+    const hit = MoneyBrain.lessons({app: 'ai', topic: 'good'}).filter(L=>!L.off).map(L=>({L, score: likeness(kw, String(L.key).split(' '))})).filter(x=>x.score >= 0.9).sort((a, b)=>b.score - a.score)[0];
+    if(!hit) return null;
+    const r = MoneyBrain.recall('ai', 'good', hit.L.key, {min: 0.001});
+    try{ return r ? JSON.parse(r.value) : null; }catch(e){ return null; }
+  }
+
   /* Before the model starts: a question about this month or later may be about something that has not happened */
   function timingNote(question, today){
     today = today || new Date().toISOString().slice(0, 10);
@@ -672,7 +692,7 @@ Rules: ${Object.values(RULES).join('; ')}.${(m=>m.length ? '\nMistakes you made 
       health: async () => ({local: await localHelper(), cloud: cloud ? await cloud.health().catch(e=>({error: e.message})) : null})};
   }
 
-  return {answer, rephrase, deep, relay, review, isTimely, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
+  return {answer, rephrase, deep, relay, review, isTimely, saveGood, findGood, datesIn, learnCase, casesFor, timingNote, pastMistakes, remember, RULES, calc, arith, bestSentences, wikidata, currency, weather, define, localTime};
 })();
 if(typeof window !== 'undefined') window.MoneyWeb = MoneyWeb;
 if(typeof module !== 'undefined') module.exports = MoneyWeb;

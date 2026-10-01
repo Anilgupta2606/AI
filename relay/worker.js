@@ -5,6 +5,7 @@
      GET /search?q=…&n=8        web results: Tavily (keys rotated; with the pages' text) -> SerpApi (Google) -> Google
                                 Programmable Search — whichever answers first, so one running out is not a problem
      GET /read?url=…&links=1    a page as clean text (Jina Reader; else a plain fetch), with the links inside it
+     GET /market?u=…            Yahoo Finance prices (chart and symbol search only), for the browser's market analysis
      GET /health                which services are set up (no secrets shown)
    Every call needs the header X-Relay-Token (your own secret). Keys live as Worker secrets, never in the apps or GitHub:
      RELAY_TOKEN, TAVILY_KEYS (comma-separated), SERPAPI_KEY, GOOGLE_API_KEY, GOOGLE_CX, JINA_KEY (optional)
@@ -115,10 +116,17 @@ export default {
         const url = u.searchParams.get('url') || '';
         if(!/^https?:\/\//.test(url)) return json({error: 'Give a full web address.'}, 400, origin);
         out = await read(env, url, u.searchParams.get('links') === '1');
-      } else return json({error: 'Unknown path. Use /search, /read or /health.'}, 404, origin);
+      } else if(u.pathname === '/market'){
+        // prices for the browser's market analysis: only Yahoo Finance's chart and symbol search
+        const url = u.searchParams.get('u') || '';
+        if(!/^https:\/\/query[12]\.finance\.yahoo\.com\/(v8\/finance\/chart\/|v1\/finance\/search\?)/.test(url)) return json({error: 'Only Yahoo Finance prices.'}, 400, origin);
+        const r = await fetch(url, {headers: {'user-agent': 'Mozilla/5.0', accept: 'application/json'}});
+        if(!r.ok) return json({error: 'The price service answered ' + r.status}, 502, origin);
+        out = await r.json();
+      } else return json({error: 'Unknown path. Use /search, /read, /market or /health.'}, 404, origin);
     }catch(e){ return json({error: String(e.message || e)}, e.status || 502, origin); }
     const res = json(out, 200, origin);
-    res.headers.set('cache-control', 'public, max-age=3600');
+    res.headers.set('cache-control', 'public, max-age=' + (u.pathname === '/market' ? 600 : 3600));
     ctx.waitUntil(cache.put(key, res.clone()));
     return res;
   },

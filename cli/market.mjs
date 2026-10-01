@@ -3,15 +3,18 @@
    hundreds of prices, so it only explains what is computed here):
      resolve("indian stock market") -> {symbol: '^NSEI', name: 'Nifty 50'}       names, indices, stocks, crypto, FX
      analyse(query, 'day'|'week'|'hour') -> {text, url, symbol, name}             the report the model reads
-   Prices: Yahoo Finance's public chart data (no key). Nothing here is advice — levels and what would confirm or
+   Prices: Yahoo Finance's public chart data (no key) — on the Mac directly; in the browser through the relay.
+   The same file runs in both (no Node-only parts), so a phone gets the identical analysis. Nothing here is advice — levels and what would confirm or
    cancel a move, from the prices themselves.
    ========================================================= */
 const UA = 'Mozilla/5.0';                                   // the plain form (a full browser name without its cookies is refused)
-const get = async url => {
+// where prices come from: straight from Yahoo on this Mac; in a browser (a phone), through your relay (useSource)
+let get = async url => {
   const r = await fetch(url, {headers: {'user-agent': UA, accept: 'application/json'}});
   if(!r.ok) throw new Error('The price service answered ' + r.status);
   return r.json();
 };
+export function useSource(fn){ get = fn; }
 
 // what people call markets -> the symbol that has the prices
 const ALIASES = [
@@ -167,5 +170,10 @@ export async function analyse(query, timeframe){
     `What would decide it: ${scen.join(' ')}`,
     `(Indicators describe the past; they are not a forecast or advice.)`,
   ].filter(Boolean).join('\n');
-  return {symbol, name, text, url: 'https://finance.yahoo.com/quote/' + encodeURIComponent(symbol) + '/', lean, last: last.c, date: day(last.t)};
+  // for the chart on the page: the last 120 candles' closes, their averages and the levels found
+  const N = Math.min(120, rows.length), from = rows.length - N, round = x => x == null ? null : Math.round(x * 100) / 100;
+  const chart = {name, symbol, unit, t: rows.slice(from).map(r=>r.t), c: c.slice(from).map(round),
+    s20: c.slice(from).map((_, i)=>round(sma(c, 20, from + i))), s50: c.slice(from).map((_, i)=>round(sma(c, 50, from + i))), s200: c.slice(from).map((_, i)=>round(sma(c, 200, from + i))),
+    support: below.map(x=>round(x.p)), resistance: above.map(x=>round(x.p)), lean};
+  return {symbol, name, text, chart, url: 'https://finance.yahoo.com/quote/' + encodeURIComponent(symbol) + '/', lean, last: last.c, date: day(last.t)};
 }

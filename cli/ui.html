@@ -96,6 +96,16 @@ details.how summary .dots{display:inline-flex; gap:3px}
 details.how summary .dots i{width:8px; height:8px; border-radius:50%; background:var(--think)}
 .dots i.search{background:var(--search)!important} .dots i.read{background:var(--read)!important} .dots i.calc{background:var(--calc)!important} .dots i.check{background:var(--check)!important}
 details.how .steps{margin:10px 0 4px}
+.chart{margin:0 0 14px; background:var(--page); border:1px solid var(--line); border-radius:16px; padding:12px 12px 8px}
+.chart figcaption{font-size:13px; color:var(--ink2); margin:0 0 6px}
+.chart svg{width:100%; height:auto; display:block}
+.lean{font-weight:700; text-transform:capitalize} .lean.bearish{color:var(--check)} .lean.bullish{color:var(--read)} .lean.mixed{color:var(--calc)}
+.legend{display:flex; flex-wrap:wrap; gap:6px 14px; font-size:12px; color:var(--mut); margin-top:4px}
+.legend i{display:inline-block; width:14px; height:3px; border-radius:2px; vertical-align:middle; margin-right:5px}
+.legend i.dash{height:0; border-top:2px dashed; background:none!important}
+.draft{margin:10px 0 0; background:var(--card); border:1px dashed var(--line); border-radius:16px; padding:12px 16px; color:var(--ink2); font-size:15px; max-height:420px; overflow:auto}
+.draft p{margin:0 0 8px}
+.dlabel{font-size:12px; font-weight:700; color:var(--think); margin:0 0 6px}
 .wbody{min-width:0; flex:1}
 .live .tl{margin-top:10px}
 .tl{display:flex; flex-direction:column; gap:4px; margin:10px 0 6px; padding-left:12px; border-left:2px solid var(--line)}
@@ -147,6 +157,8 @@ details.also{margin-top:10px} details.also summary{cursor:pointer; font-size:13p
 .foot .by{font-family:var(--mono); font-size:11px; flex:1 1 280px}
 .ghost{background:none; border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:13px; font-weight:600; color:var(--ink2); cursor:pointer}
 .ghost:hover{border-color:var(--check); color:var(--check)}
+.foot .up,.foot .down{padding:4px 10px} .foot .up:hover{border-color:var(--read); color:var(--read)}
+.thanks{font-size:12.5px}
 .teach{display:flex; gap:8px; margin-top:12px}
 .teach input{flex:1; min-width:0; background:var(--page); border:1px solid var(--line); border-radius:12px; padding:9px 12px}
 .err{color:var(--err)}
@@ -161,8 +173,57 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .send{width:42px; height:42px; border-radius:50%; border:0; background:var(--ink); color:var(--page); display:grid; place-items:center; cursor:pointer; flex:none; transition:transform .15s ease}
 .send:hover{transform:scale(1.06)} .send:disabled{opacity:.4; cursor:default; transform:none}
 .btn{background:var(--ink); color:var(--page); border:0; border-radius:12px; padding:9px 16px; font-weight:600; cursor:pointer}
+.clip{width:38px; height:38px; border:0; background:none; color:var(--mut); border-radius:12px; cursor:pointer; display:grid; place-items:center; flex:none; align-self:flex-end}
+.clip:hover{background:var(--page); color:var(--ink)}
+.files{max-width:800px; margin:0 auto 8px; display:flex; flex-wrap:wrap; gap:6px}
+.fchip{display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 6px 4px 12px; font-size:13px; box-shadow:var(--shadow)}
+.fchip small{color:var(--mut)} .fchip button{border:0; background:var(--page); border-radius:50%; width:20px; height:20px; cursor:pointer; color:var(--ink2); line-height:1}
+.fchip.busy{opacity:.6}
+.q .att{display:block; font-size:12.5px; opacity:.75; margin-top:4px}
 .hint{max-width:800px; margin:8px auto 0; font-size:12px; color:var(--mut); display:flex; justify-content:space-between; gap:12px}
 .link{background:none; border:0; padding:0; color:var(--ink2); text-decoration:underline; text-underline-offset:3px; cursor:pointer; font-size:12.5px}
+
+/* account: the icon, its menu (theme, cloud, sign out) and the sign-in page */
+.acct{position:relative}
+.avatar{width:36px; height:36px; border-radius:50%; border:0; display:grid; place-items:center; cursor:pointer; color:#fff; background:var(--orb); padding:0}
+.avatar svg{background:var(--ink); border-radius:50%; width:30px; height:30px; padding:6px; color:var(--page)}
+.menu{position:absolute; right:0; top:46px; width:300px; background:var(--card); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); padding:14px; z-index:7}
+.menu .who{font-size:13.5px; color:var(--ink2); margin:0 0 12px}
+.mlabel{font-size:12px; font-weight:700; color:var(--mut); margin:0 0 6px}
+.seg{display:flex; background:var(--page); border-radius:12px; padding:3px; gap:3px; margin:0 0 14px}
+.seg button{flex:1; border:0; background:none; border-radius:9px; padding:6px 0; font-size:13px; font-weight:600; color:var(--ink2); cursor:pointer}
+.seg button[aria-checked="true"]{background:var(--card); color:var(--ink); box-shadow:var(--shadow)}
+.tog{display:flex; gap:10px; align-items:flex-start; font-size:13.5px; margin:0 0 14px; cursor:pointer}
+.tog input{margin-top:3px; accent-color:var(--think)}
+.tog small{display:block; color:var(--mut); font-size:12px; line-height:1.45; margin-top:2px}
+.wide{width:100%; justify-content:center; text-align:center}
+.login{position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:16px; background:radial-gradient(900px 500px at 80% 0%, var(--page2), transparent 60%), var(--page)}
+.lcard{width:min(380px,100%); background:var(--card); border:1px solid var(--line); border-radius:24px; padding:28px 24px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px}
+.lcard h1{font:700 30px var(--display); letter-spacing:-.02em; margin:6px 0 0}
+.lcard .sub{margin:0 0 6px}
+.lcard label{display:flex; flex-direction:column; gap:5px; font-size:13px; font-weight:600; color:var(--ink2)}
+.lcard input{background:var(--page); border:1px solid var(--line); border-radius:12px; padding:10px 12px; font-size:15px}
+.lcard input:focus{outline:2px solid var(--search); outline-offset:1px}
+.lcard .btn{padding:11px; border-radius:14px; margin-top:4px}
+
+/* goal, the / menu, connectors, toast */
+.ghosty{background:var(--card); color:var(--ink); border:1px solid var(--line)}
+.goalbar{max-width:800px; margin:0 auto 8px}
+.goalbar span{display:inline-flex; align-items:center; gap:8px; background:var(--think-bg); color:var(--think); border-radius:999px; padding:5px 6px 5px 12px; font-size:13px; font-weight:600; max-width:100%}
+.goalbar b{font-weight:600; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.goalbar button{border:0; background:var(--card); border-radius:50%; width:20px; height:20px; cursor:pointer; color:var(--ink2)}
+.slash{max-width:800px; margin:0 auto 8px; background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); padding:6px; max-height:300px; overflow:auto}
+.slash .it{display:flex; gap:12px; align-items:baseline; padding:8px 10px; border-radius:10px; cursor:pointer}
+.slash .it.sel,.slash .it:hover{background:var(--page)}
+.slash .it b{font:600 14px var(--mono); color:var(--think); white-space:nowrap} .slash .it i{font-style:normal; color:var(--mut); font:13px var(--mono)}
+.slash .it span{font-size:13.5px; color:var(--ink2)}
+.sw{display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--line); font-size:14px}
+.sw input{margin-top:3px; accent-color:var(--read); width:16px; height:16px}
+.sw small{display:block; color:var(--mut); font-size:12.5px; line-height:1.4; word-break:break-all}
+.sw .x{margin-left:auto}
+.cform{display:flex; flex-direction:column; gap:8px; margin-top:10px}
+.cform input{background:var(--page); border:1px solid var(--line); border-radius:10px; padding:8px 10px; font-size:14px}
+.toast{position:fixed; left:50%; bottom:120px; transform:translateX(-50%); background:var(--ink); color:var(--page); border-radius:999px; padding:9px 18px; font-size:14px; font-weight:600; z-index:30; box-shadow:var(--shadow); max-width:90vw}
 
 /* what it has learned */
 .scrim{position:fixed; inset:0; background:rgb(20 18 50 / .3); opacity:0; pointer-events:none; transition:opacity .2s; z-index:5}
@@ -187,8 +248,30 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 <header><div class="bar">
   <div class="brand"><div class="orb" id="orb"></div>AI</div>
   <div class="where"><span class="pill" id="stWhere"><i></i>Starting</span><span class="pill" id="stSearch" hidden></span><span class="pill model" id="stModel" hidden></span></div>
+  <button class="learnedBtn ghosty" id="openConn" title="What it can use">Connectors</button>
   <button class="learnedBtn" id="openLearned">Learned</button>
+  <div class="acct">
+    <button class="avatar" id="acctBtn" aria-label="Account" aria-haspopup="true" aria-expanded="false"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg></button>
+    <div class="menu" id="acctMenu" hidden>
+      <div class="who">Signed in as <b id="whoName">admin</b></div>
+      <div class="mlabel">Theme</div>
+      <div class="seg" id="themeSeg" role="radiogroup" aria-label="Theme"><button data-t="auto" role="radio">Auto</button><button data-t="light" role="radio">Light</button><button data-t="dark" role="radio">Dark</button></div>
+      <label class="tog"><input type="checkbox" id="cloudTog"><span><b>Cloud AI for hard questions</b><small>Long code, deep analysis, or when its checks fail twice: a bigger free model (your keys in Setup) writes the answer from what was found here. Off: everything stays on this Mac.</small></span></label>
+      <button class="ghost wide" id="logout">Sign out</button>
+    </div>
+  </div>
 </div></header>
+<section class="login" id="login" hidden>
+  <form class="lcard" id="loginForm" autocomplete="on">
+    <div class="orb" style="--s:52px"></div>
+    <h1>Sign in</h1>
+    <p class="sub">Your AI — the same sign-in as your other apps.</p>
+    <label>Username<input id="lu" autocomplete="username" required></label>
+    <label>Password<input id="lp" type="password" autocomplete="current-password" required></label>
+    <p class="err" id="lerr" hidden>That username or password is not right.</p>
+    <button class="btn wide">Sign in</button>
+  </form>
+</section>
 
 <main id="main">
   <section class="hello" id="hello">
@@ -209,14 +292,26 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 </main>
 
 <div class="composer">
+  <div class="goalbar" id="goalbar" hidden></div>
+  <div class="files" id="files" hidden></div>
+  <div class="slash" id="slash" role="listbox" hidden></div>
   <form class="box" id="form">
-    <textarea id="q" rows="1" placeholder="Ask anything…" aria-label="Your question"></textarea>
+    <button class="clip" type="button" id="clip" aria-label="Attach a file" title="Attach files: PDF, text, CSV, JSON, code"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 01-7.1-7.1l8.6-8.6a3.3 3.3 0 014.7 4.7l-8.6 8.6a1.7 1.7 0 01-2.4-2.4l7.9-7.9"/></svg></button>
+    <input type="file" id="fileIn" multiple hidden accept=".pdf,.txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,.xml,.log,.yaml,.yml,.ini,.js,.mjs,.ts,.py,.java,.c,.cpp,.h,.sql,.sh,.css">
+    <textarea id="q" rows="1" placeholder="Ask anything…  (type / for commands)" aria-label="Your question"></textarea>
     <button class="send" id="ask" aria-label="Ask"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
   </form>
   <div class="hint"><span>Enter to ask · Shift+Enter for a new line</span><button class="link" id="clear" type="button">New conversation</button></div>
 </div>
 
 <div class="scrim" id="scrim"></div>
+<aside class="panel" id="connPanel" aria-label="Connectors">
+  <button class="ghost close" id="closeConn">Close</button>
+  <h2>Connectors</h2>
+  <p class="sub">What it may use to answer. Switch anything off and it will not be used.</p>
+  <div id="conn"></div>
+</aside>
+<div class="toast" id="toast" hidden></div>
 <aside class="panel" id="panel" aria-label="What it learned">
   <button class="ghost close" id="closeLearned">Close</button>
   <h2>What it learned</h2>
@@ -276,6 +371,31 @@ function markdown(text, urls){
 }
 const srcCard = (s, i) => { const h = host(s.url) || s.title || ''; const web = s.url && !/^file:/.test(s.url);
   return `<li><a ${web ? `href="${esc(s.url)}" target="_blank" rel="noopener"` : ''} title="${esc(s.url || s.title)}"><span class="av" style="background:hsl(${hue(h)} 65% 55%)">${esc((h || '?')[0].toUpperCase())}</span><span class="tx"><b>${esc(s.title || h)}</b><small>${s.i || i + 1} · ${esc(h)}</small></span></a></li>`; };
+/* the price chart of a market answer: closes, the 20/50/200 averages, support (mint) and resistance (coral) */
+function chartSvg(ch){
+  if(!ch || !ch.c || ch.c.length < 10) return '';
+  const W = 720, H = 260, L = 8, R = 64, T = 14, B = 26, n = ch.c.length;
+  const vals = ch.c.concat(ch.s20, ch.s50, ch.s200).filter(v=>v != null);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  (ch.support || []).concat(ch.resistance || []).forEach(v=>{ if(v > lo - (hi - lo) * .25 && v < hi + (hi - lo) * .25){ lo = Math.min(lo, v); hi = Math.max(hi, v); } });
+  const pad = (hi - lo) * .06; lo -= pad; hi += pad;
+  const x = i => L + (W - L - R) * i / (n - 1), y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  const line = (a, col, w, dash) => { let d = '', on = false; a.forEach((v, i)=>{ if(v == null){ on = false; return; } d += (on ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1); on = true; }); return d ? `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" ${dash ? 'stroke-dasharray="' + dash + '"' : ''} stroke-linejoin="round"/>` : ''; };
+  const fmtN = v => Number(v).toLocaleString('en-IN', {maximumFractionDigits: v > 100 ? 0 : 2});
+  const lvl = (v, col, label) => v < lo || v > hi ? '' : `<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${col}" stroke-width="1.2" stroke-dasharray="5 4" opacity=".9"/><text x="${W - R + 4}" y="${(y(v) + 4).toFixed(1)}" font-size="10.5" fill="${col}">${label} ${fmtN(v)}</text>`;
+  const ticks = [0, 1, 2, 3].map(k=>lo + (hi - lo) * (k + .5) / 4);
+  const date = t => new Date(t).toLocaleDateString('en-IN', {day: 'numeric', month: 'short'});
+  const last = ch.c[n - 1];
+  return `<figure class="chart"><figcaption><b>${esc(ch.name)}</b> · last ${n} ${esc(ch.unit)}s · <span class="lean ${esc(ch.lean)}">${esc(ch.lean)}</span></figcaption>
+  <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(ch.name)} price chart">
+    ${ticks.map(v=>`<line x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--line)" stroke-width="1"/>`).join('')}
+    ${(ch.support || []).map(v=>lvl(v, 'var(--read)', 'S')).join('')}${(ch.resistance || []).map(v=>lvl(v, 'var(--check)', 'R')).join('')}
+    ${line(ch.s200, 'var(--check)', 1.4)}${line(ch.s50, 'var(--calc)', 1.4)}${line(ch.s20, 'var(--search)', 1.2, '3 3')}${line(ch.c, 'var(--ink)', 2)}
+    <circle cx="${x(n - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3.5" fill="var(--ink)"/>
+    <text x="${L}" y="${H - 6}" font-size="10.5" fill="var(--mut)">${date(ch.t[0])}</text><text x="${(W - R) / 2}" y="${H - 6}" font-size="10.5" fill="var(--mut)" text-anchor="middle">${date(ch.t[Math.floor(n / 2)])}</text><text x="${W - R}" y="${H - 6}" font-size="10.5" fill="var(--mut)" text-anchor="end">${date(ch.t[n - 1])}</text>
+  </svg>
+  <div class="legend"><span><i style="background:var(--ink)"></i>Close ${fmtN(last)}</span><span><i style="background:var(--search)"></i>20-${esc(ch.unit)}</span><span><i style="background:var(--calc)"></i>50-${esc(ch.unit)}</span><span><i style="background:var(--check)"></i>200-${esc(ch.unit)}</span><span><i class="dash" style="border-color:var(--read)"></i>Support</span><span><i class="dash" style="border-color:var(--check)"></i>Resistance</span></div></figure>`;
+}
 function render(out){
   const urls = {}; (out.sources || []).concat(out.read || []).forEach((s, i)=>{ urls[s.i || i + 1] = s.url; });
   const cited = out.sources || [], also = (out.read || []).filter(r=>!cited.some(c=>c.url === r.url));
@@ -284,7 +404,7 @@ function render(out){
   if(cited.length) src += `<div class="srchead">Sources</div><ul class="src">${cited.map(srcCard).join('')}</ul>`;
   if(also.length) src += `<details class="also"><summary>Also read ${also.length} page${also.length === 1 ? '' : 's'}</summary><ul class="src">${also.map(srcCard).join('')}</ul></details>`;
   if(!cited.length && !also.length && usedModel) src += `<p class="memory">From the model's own knowledge — no web pages were read for this answer.</p>`;
-  return markdown(out.text, urls) + src;
+  return chartSvg(out.chart) + markdown(out.text, urls) + src;
 }
 /* "How it got here": every step, each opening to what it did — searched (and the results), read (the passage),
    worked out, ran (the code and its output), and what the checks sent back. Built live while it works. */
@@ -307,10 +427,10 @@ const timeline = (traces, live) => `<div class="tl">${traces.map((t, i)=>traceRo
 const slim = traces => (traces || []).slice(0, 40).map(t=>{ const d = t.detail; if(!d || typeof d === 'string') return {kind: t.kind, title: t.title, detail: typeof d === 'string' ? d.slice(0, 1500) : d};
   const c = Object.assign({}, d); ['code', 'output', 'excerpt', 'draft', 'why'].forEach(f=>{ if(c[f]) c[f] = String(c[f]).slice(0, 1500); }); return {kind: t.kind, title: t.title, detail: c}; });
 
-function turnEl(q){
+function turnEl(q, files){
   const el = document.createElement('section');
   el.className = 'turn';
-  el.innerHTML = `<div class="q"><div>${esc(q)}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="wbody"><div class="steps"></div><div class="live"></div></div></div><div class="slot"></div>`;
+  el.innerHTML = `<div class="q"><div>${esc(q)}${files && files.length ? `<span class="att">📎 ${files.map(f=>esc(f.name)).join(', ')}</span>` : ''}</div></div><div class="work"><div class="orb busy" style="--s:22px"></div><div class="wbody"><div class="steps"></div><div class="live"></div><div class="draft" hidden></div></div></div><div class="slot"></div>`;
   $('#turns').appendChild(el);
   $('#hello').hidden = true;
   return el;
@@ -321,31 +441,41 @@ function finish(el, q, out, steps, traces){
   el.querySelector('.work').outerHTML = n ? `<details class="how"><summary><span class="dots">${dots.join('')}</span>How it got here · ${n} step${n === 1 ? '' : 's'}${out.secs ? ' · ' + out.secs + ' s' : ''}</summary>${traces.length ? timeline(traces) : `<div class="steps">${steps.map(s=>stepHtml(s)).join('')}</div>`}</details>` : '';
   const model = out.model || (/no AI/.test(out.by || '') ? 'Worked out exactly (no AI)' : '');
   el.querySelector('.slot').innerHTML = `<div class="a">${model ? `<span class="model" title="The AI model that wrote this answer">✦ ${esc(model)}</span>` : ''}${render(out)}
-    <div class="foot"><span class="by">${esc(out.by || '')}</span><button class="ghost" type="button">Not right? Teach me</button></div></div>`;
-  el.querySelector('.foot .ghost').onclick = () => teachBox(el, q);
+    <div class="foot"><span class="by">${esc(out.by || '')}</span>${out.saved ? '<button class="ghost fresh" type="button">Ask fresh</button>' : ''}<button class="ghost up" type="button" title="Good answer — keep it">👍</button><button class="ghost down" type="button" title="Wrong — tell it what is right">👎</button></div></div>`;
+  el.querySelector('.foot .down').onclick = () => teachBox(el, q);
+  el.querySelector('.foot .up').onclick = async e => {
+    const b = e.currentTarget; b.disabled = true;
+    const r = await api.feedback({question: q, good: true, answer: {text: out.text, sources: out.sources, model: out.model}}).catch(()=>({}));
+    b.outerHTML = `<span class="ok thanks">${r.saved ? '✓ Kept — this question gets this answer next time' : '✓ Thanks'}</span>`;
+    loadLearned();
+  };
+  const fr = el.querySelector('.foot .fresh'); if(fr) fr.onclick = () => ask(q, {fresh: true});
 }
 function teachBox(el, q){
   if(el.querySelector('.teach')) return el.querySelector('.teach input').focus();
   const f = document.createElement('form');
   f.className = 'teach';
-  f.innerHTML = `<input placeholder="What is right? It will remember for questions like this" aria-label="What is right"><button class="btn">Teach</button>`;
+  f.innerHTML = `<input placeholder="What is wrong, and what is right? It will remember for questions like this" aria-label="What is wrong"><button class="btn">Teach</button>`;
   el.querySelector('.a').appendChild(f);
   f.querySelector('input').focus();
   f.onsubmit = async e => {
     e.preventDefault();
     const lesson = f.querySelector('input').value.trim();
     if(lesson.length < 8) return;
-    const r = await api.teach(q, lesson).catch(()=>({}));
+    const r = await api.feedback({question: q, good: false, note: lesson}).catch(()=>({}));
     f.outerHTML = r.ok ? '<p class="ok">✓ Learned. Questions like this one will start with your lesson.</p>' : '<p class="err">Could not save that.</p>';
     loadLearned();
   };
 }
 
-async function ask(q){
+async function ask(q, opt){
+  opt = opt || {};
   q = q.trim();
   if(!q || busy) return;
+  const files = attachments.filter(a=>a.text && !a.busy).map(a=>({name: a.name, text: a.text}));
+  attachments = []; showFiles();
   busy = true; $('#ask').disabled = true; $('#q').value = ''; grow(); $('#orb').classList.add('busy');
-  const el = turnEl(q), box = el.querySelector('.steps'), live = el.querySelector('.live'), steps = [], traces = [];
+  const el = turnEl(q, files), box = el.querySelector('.steps'), live = el.querySelector('.live'), steps = [], traces = [];
   const addTrace = t => { traces.push(t); const open = Array.from(live.querySelectorAll('details')).map(d=>d.open); live.innerHTML = timeline(traces, true); live.querySelectorAll('details').forEach((d, i)=>{ if(open[i]) d.open = true; }); };
   el.scrollIntoView({behavior: 'smooth', block: 'start'});
   const step = t => {
@@ -359,7 +489,7 @@ async function ask(q){
   const done = out => {
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
     finish(el, q, out, steps, traces);
-    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model}, steps, traces: slim(traces)});
+    history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart}, steps, traces: slim(traces)});
     history = history.slice(-20).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
     store.set('moneyai.history', history);
   };
@@ -367,11 +497,12 @@ async function ask(q){
     await ready;
     if(mode === 'browser'){
       const t0 = Date.now();
+      opt_fresh = !!opt.fresh; opt_files = files;
       const out = await browserAnswer(q, turns, step);
       out.secs = Math.round((Date.now() - t0) / 1000);
       done(out);
     } else {
-      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns})});
+      const r = await fetch(HELPER + '/ask', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({question: q, history: turns, cloud: cloudKeys(), fresh: !!opt.fresh, attachments: files, goal, disabled})});
       if(!r.ok) throw new Error((await r.json().catch(()=>({}))).error || 'It answered ' + r.status);
       const reader = r.body.getReader(), dec = new TextDecoder();
       let buf = '', out = null;
@@ -386,6 +517,7 @@ async function ask(q){
           const m = JSON.parse(line);
           if(m.step) step(m.step);
           if(m.trace) addTrace(m.trace);
+          if(m.draft != null){ const d = el.querySelector('.draft'); if(d){ d.hidden = !String(m.draft).trim(); d.innerHTML = '<div class="dlabel">Writing…</div>' + markdown(m.draft, {}); } }
           if(m.error) throw new Error(m.error);
           if(m.answer) out = m.answer;
         }
@@ -408,6 +540,9 @@ async function loadLearned(){
   $('#openLearned').textContent = 'Learned' + (cases.length ? ' · ' + cases.length : '');
   $('#learned').innerHTML =
     `<h3><i style="background:var(--read)"></i>Lessons from particular questions</h3>` + (cases.length ? `<ul>${cases.map(c=>`<li class="lesson${c.taught ? ' you' : ''}">${esc(c.lesson)}<div class="foot"><span>${c.taught ? 'You taught this' : 'Caught by its own check'}${c.n > 1 ? ' · ' + c.n + ' times' : ''}</span><button class="ghost" data-id="${esc(c.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">None yet. When its check catches a mistake, or you teach it, the lesson shows here.</p>') +
+    `<h3><i style="background:var(--think)"></i>About you (/remember)</h3>` + ((d.profile || []).length ? `<ul style="list-style:none;padding:0">${d.profile.map(p=>`<li class="lesson you">${esc(p.text)}<div class="foot"><span>Given to every answer</span><button class="ghost" data-id="${esc(p.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">Nothing yet. Type <code>/remember I live in Pune</code>.</p>') +
+    `<h3><i style="background:var(--calc)"></i>Answers you kept (👍)</h3>` + ((d.saved || []).length ? `<ul style="list-style:none;padding:0">${d.saved.map(c=>`<li class="lesson">${esc(c.question)}<div class="foot"><span>Given back when asked again</span><button class="ghost" data-id="${esc(c.id)}" type="button">Forget</button></div></li>`).join('')}</ul>` : '<p class="sub">None yet. Press 👍 on an answer about something that does not change.</p>') +
+    (d.selfexam ? `<h3><i style="background:var(--search)"></i>Weekly self-exam</h3><p class="sub">${esc(d.selfexam.date)}: ${d.selfexam.right} of ${d.selfexam.total} right${d.selfexam.learned ? '; learned from ' + d.selfexam.learned + ' miss' + (d.selfexam.learned === 1 ? '' : 'es') : ''}.</p>` : '') +
     `<h3><i style="background:var(--check)"></i>Mistakes its check has caught</h3>` + ((d.mistakes || []).length ? `<ul style="list-style:none;padding:0">${d.mistakes.map(m=>`<li><span class="count">${m.n}×</span>${esc(m.text)}</li>`).join('')}</ul>` : '<p class="sub">None yet.</p>') +
     `<h3><i style="background:var(--search)"></i>Rules every answer is checked against</h3><ol>${Object.values(d.rules || {}).map(r=>`<li>${esc(r)}</li>`).join('')}</ol>` +
     `<h3><i style="background:var(--think)"></i>Your own rules</h3>` + ((d.yours || []).length ? `<ul>${d.yours.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : '') + (d.rulesFile ? `<p class="sub">Add lines starting with “- ” to <code>${esc(d.rulesFile)}</code></p>` : '<p class="sub">Kept on your Mac (~/.money-ai/rules.md).</p>');
@@ -422,6 +557,10 @@ const engineHere = () => typeof MoneyWeb !== 'undefined' && typeof MoneyBrain !=
 const api = {
   teach: (q, lesson) => mode === 'mac' ? post('/teach', {question: q, lesson}).then(r=>{ swap(); return r; })
     : Promise.resolve((MoneyWeb.learnCase(q, [{rule: 'you'}], {text: 'For “' + q.slice(0, 90) + '”: ' + lesson}), {ok: true})),
+  feedback: d => mode === 'mac' ? post('/feedback', d).then(r=>{ swap(); return r; }) : Promise.resolve(d.good ? {ok: true, saved: MoneyWeb.saveGood(d.question, d.answer || {})}
+    : ((d.note && d.note.length >= 8 ? MoneyWeb.learnCase(d.question, [{rule: 'you'}], {text: 'For “' + d.question.slice(0, 90) + '”: ' + d.note}) : null), {ok: true})),
+  rule: t => mode === 'mac' ? post('/rule', {text: t}) : Promise.resolve((store.set('ai.rules', store.get('ai.rules', []).concat([t]).slice(-20)), {ok: true})),
+  remember: t => mode === 'mac' ? post('/remember', {text: t}).then(r=>{ swap(); return r; }) : Promise.resolve({ok: (MoneyBrain.learn('ai', 'profile', t.toLowerCase().slice(0, 80), t, {label: t, weight: 3}), true)}),
   learned: () => mode === 'mac' ? fetch(HELPER + '/learned').then(r=>r.json()) : Promise.resolve(browserLearned()),
   forget: id => mode === 'mac' ? post('/forget', {id}).then(r=>{ swap(); return r; }) : Promise.resolve({ok: (MoneyBrain.forget(id), true)}),
 };
@@ -429,20 +568,40 @@ function browserLearned(){
   const L = MoneyBrain.lessons({app: 'ai'}).filter(x=>!x.off);
   return {rules: MoneyWeb.RULES, yours: [], rulesFile: '',
     mistakes: L.filter(x=>x.topic === 'mistake').sort((a, b)=>b.n - a.n).map(x=>({rule: x.key, text: MoneyWeb.RULES[x.key] || x.key, n: x.n})),
+    saved: L.filter(x=>x.topic === 'good').map(x=>({id: x.id, question: x.label || ''})),
+    profile: L.filter(x=>x.topic === 'profile').map(x=>({id: x.id, text: x.label || x.key})),
     cases: L.filter(x=>x.topic === 'case').sort((a, b)=>a.first - b.first).map(x=>{ const r = MoneyBrain.recall('ai', 'case', x.key, {min: 0.001}); return {id: x.id, question: x.label || '', lesson: r ? r.value : '', taught: x.why === 'You corrected it', n: x.n}; })};
 }
 // in this browser: worked out or looked up exactly first, then your relay searches and reads and an AI answers (deep, with the rules)
+let opt_fresh = false, opt_files = [];
+const browserContext = () => [goal ? 'Goal: ' + goal : '', ...MoneyBrain.lessons({app: 'ai', topic: 'profile'}).filter(L=>!L.off).map(L=>'About the user: ' + (L.label || L.key)), ...store.get('ai.rules', []).map(r=>'Rule: ' + r)].filter(Boolean).join('\n');
 async function browserAnswer(q, turns, step){
   step('Checking what can be worked out exactly');
+  const g = !opt_fresh && !opt_files.length && MoneyWeb.findGood(q);
+  if(g) return {text: g.text, sources: g.sources || [], saved: true, model: 'Your saved answer', by: 'Your saved answer from ' + g.at + ' (you marked it 👍)'};
   const relayCfg = (MoneyAI.aiLocal() || {}).relay, hasAi = MoneyAI.aiAvailable();
   const chat = hasAi ? (sys, t, o) => MoneyAI.chat(sys, t, o) : null;
   let quick = null;
   try{ quick = await MoneyWeb.answer(q, {factsOnly: !!(relayCfg && relayCfg.url)}); }catch(e){}
   if(quick && quick.kind !== 'not-found' && quick.kind !== 'read') return Object.assign({by: 'Worked out exactly · ' + quick.kind + ' (no AI)'}, quick);
+  const extra = opt_files.map(f=>({title: f.name, url: 'file://' + f.name, text: f.text.slice(0, 60000)}));
+  let chart = null;
+  // a market question: real prices through your relay, analysed here (the same code as on the Mac)
+  if(relayCfg && relayCfg.url && relayCfg.token && /\b(stock|stocks|share|shares|market|markets|nifty|sensex|bank nifty|bitcoin|btc|ethereum|crypto|gold price|silver price|crude|index|technical analysis)\b/i.test(q)){
+    try{
+      step('📈 Getting real prices through your relay');
+      const M = await import('/ai/market.mjs');
+      M.useSource(async url => { const r = await fetch(relayCfg.url.replace(/\/+$/, '') + '/market?u=' + encodeURIComponent(url), {headers: {'x-relay-token': relayCfg.token}}); const d = await r.json(); if(!r.ok || d.error) throw new Error(d.error || 'prices ' + r.status); return d; });
+      const a = await M.analyse(q, /\bweek/i.test(q) ? 'week' : /\bhour/i.test(q) ? 'hour' : 'day');
+      extra.unshift({title: a.name + ' — prices analysed here', url: a.url, text: a.text}); chart = a.chart;
+    }catch(e){ step('Prices not available: ' + e.message); }
+  }
   if(relayCfg && relayCfg.url && relayCfg.token){
     const relay = MoneyWeb.relay(relayCfg, {local: false});
-    return MoneyWeb.deep(q, {search: relay.search, read: relay.read, chat, onStep: step});
+    const out = await MoneyWeb.deep(q, {search: disabled.includes('web') ? null : relay.search, read: relay.read, chat, onStep: step, extra, context: browserContext()});
+    return Object.assign(out, chart ? {chart} : {});
   }
+  if(extra.length && chat) return Object.assign(await MoneyWeb.deep(q, {search: null, read: async () => { throw new Error('no reading here'); }, chat, onStep: step, extra}), chart ? {chart} : {});
   if(quick && quick.kind !== 'not-found') return hasAi && quick.passages ? MoneyWeb.rephrase(q, quick, chat).then(o=>Object.assign({model: o.by || ''}, o)) : quick;
   if(hasAi){
     step('Asking the AI (no web search here)');
@@ -473,6 +632,7 @@ async function detect(){
     pill('#stWhere', 'On this Mac', 'on');
     pill('#stSearch', 'Your search engine', 'on');
     showModel(d.model || 'No model (ollama pull qwen3:4b-instruct)', !!d.model);
+    fetch(HELPER + '/warm', {method: 'POST', headers: {'content-type': 'application/json'}, body: '{}'}).catch(()=>{});     // load the model now, not on the first question
     swap();
   } else if(engineHere()){
     mode = 'browser';
@@ -496,18 +656,177 @@ $('#q').addEventListener('input', grow);
 document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('.copy'); if(!b) return;
   const code = b.closest('.code').querySelector('code').textContent;
   (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(()=>{ b.textContent = 'Copied'; setTimeout(()=>{ b.textContent = 'Copy'; }, 1500); }).catch(()=>{ b.textContent = 'Select and copy'; }); });
-$('#q').addEventListener('keydown', e=>{ if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); ask($('#q').value); } });
-$('#form').onsubmit = e => { e.preventDefault(); ask($('#q').value); };
+$('#q').addEventListener('keydown', e=>{ if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); const v = $('#q').value; if(/^\/\w/.test(v.trim())) runCommand(v); else ask(v); } });
+$('#form').onsubmit = e => { e.preventDefault(); const v = $('#q').value; if(/^\/\w/.test(v.trim())) runCommand(v); else ask(v); };
 document.querySelectorAll('.tries button').forEach(b=>b.onclick = () => ask(b.dataset.q));
 const openPanel = on => { $('#panel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadLearned(); };
 $('#openLearned').onclick = () => openPanel(true);
 $('#closeLearned').onclick = () => openPanel(false);
-$('#scrim').onclick = () => openPanel(false);
-document.addEventListener('keydown', e=>{ if(e.key === 'Escape') openPanel(false); });
+$('#scrim').onclick = () => { openPanel(false); openConn(false); };
+document.addEventListener('keydown', e=>{ if(e.key === 'Escape'){ openPanel(false); openConn(false); } });
 $('#clear').onclick = () => { history = []; store.set('moneyai.history', []); $('#turns').innerHTML = ''; $('#hello').hidden = false; };
-// the conversation so far comes back after a reload
-history.forEach(h=>{ if(h && h.answer){ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); } });
-const ready = detect(); $('#q').focus();
+/* ---------------------------------------------------------------- files you attach: read here, in this browser
+   (text as it is; a PDF's text with Mozilla's pdf.js), then sent with the question as numbered sources */
+let attachments = [];
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+async function pdfText(file){
+  if(typeof pdfjsLib === 'undefined'){ await loadScript(PDFJS + 'pdf.min.js'); pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; }
+  const doc = await pdfjsLib.getDocument({data: new Uint8Array(await file.arrayBuffer())}).promise;
+  const pages = [];
+  for(let i = 1; i <= Math.min(doc.numPages, 150); i++){ const c = await (await doc.getPage(i)).getTextContent(); pages.push('[page ' + i + '] ' + c.items.map(x=>x.str + (x.hasEOL ? '\n' : ' ')).join('')); }
+  return pages.join('\n\n');
+}
+function showFiles(){
+  const box = $('#files'); box.hidden = !attachments.length;
+  box.innerHTML = attachments.map((a, i)=>`<span class="fchip${a.busy ? ' busy' : ''}">📄 ${esc(a.name)} <small>${a.busy ? 'reading…' : a.err ? esc(a.err) : Math.round(a.text.length / 1000) + 'k chars'}</small><button type="button" data-i="${i}" aria-label="Remove">×</button></span>`).join('');
+  box.querySelectorAll('button').forEach(b=>b.onclick = () => { attachments.splice(+b.dataset.i, 1); showFiles(); });
+}
+$('#clip').onclick = () => $('#fileIn').click();
+$('#fileIn').onchange = async () => {
+  for(const f of Array.from($('#fileIn').files).slice(0, 5 - attachments.length)){
+    const a = {name: f.name, text: '', busy: true}; attachments.push(a); showFiles();
+    try{
+      if(f.size > 25e6) throw new Error('too big');
+      a.text = /\.pdf$/i.test(f.name) || f.type === 'application/pdf' ? await pdfText(f) : await f.text();
+      if(!a.text.trim()) throw new Error(/\.pdf$/i.test(f.name) ? 'no text (a scanned PDF?)' : 'empty');
+    }catch(e){ a.err = String(e.message || e).slice(0, 40); }
+    a.busy = false; showFiles();
+  }
+  attachments = attachments.filter(a=>!a.err || a.busy); setTimeout(showFiles, 2500);
+  $('#fileIn').value = '';
+};
+
+/* ---------------------------------------------------------------- / commands */
+const COMMANDS = [
+  {c: '/goal', a: 'what you are working towards', d: 'Keep a goal for this conversation — every answer works toward it'},
+  {c: '/rule', a: 'a rule', d: 'A rule every answer must follow from now on'},
+  {c: '/remember', a: 'something about you', d: 'Remember a fact about you (your city, work, what you like)'},
+  {c: '/fresh', a: 'a question', d: 'Ask again from scratch, without a saved answer'},
+  {c: '/connectors', a: '', d: 'Choose what it can use: web, prices, code, data sources'},
+  {c: '/learned', a: '', d: 'See what it has learned, and forget things'},
+  {c: '/file', a: '', d: 'Attach a file (PDF, text, CSV, code)'},
+  {c: '/cloud', a: 'on | off', d: 'Let a bigger cloud model write the hard answers'},
+  {c: '/theme', a: 'auto | light | dark', d: 'Change the look'},
+  {c: '/new', a: '', d: 'Start a new conversation'},
+  {c: '/help', a: '', d: 'Show all commands'},
+];
+let slashSel = 0;
+const toast = t => { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(()=>{ e.hidden = true; }, 2600); };
+function slashMenu(){
+  const v = $('#q').value, box = $('#slash');
+  const m = /^\/(\S*)$/.exec(v);
+  const list = m ? COMMANDS.filter(x=>x.c.slice(1).startsWith(m[1].toLowerCase())) : [];
+  box.hidden = !list.length;
+  if(!list.length) return [];
+  slashSel = Math.min(slashSel, list.length - 1);
+  box.innerHTML = list.map((x, i)=>`<div class="it${i === slashSel ? ' sel' : ''}" role="option" data-c="${x.c}"><b>${x.c}</b>${x.a ? `<i>${esc(x.a)}</i>` : ''}<span>${esc(x.d)}</span></div>`).join('');
+  box.querySelectorAll('.it').forEach(it=>it.onmousedown = e => { e.preventDefault(); pickCommand(it.dataset.c); });
+  return list;
+}
+function pickCommand(c){
+  const x = COMMANDS.find(y=>y.c === c);
+  $('#slash').hidden = true;
+  if(x && x.a){ $('#q').value = c + ' '; $('#q').focus(); }
+  else runCommand(c);
+}
+let goal = store.get('ai.goal', '');
+function showGoal(){ const g = $('#goalbar'); g.hidden = !goal; g.innerHTML = goal ? `<span>🎯 Goal: <b title="${esc(goal)}">${esc(goal)}</b><button type="button" aria-label="Clear the goal">×</button></span>` : ''; if(goal) g.querySelector('button').onclick = () => { goal = ''; store.set('ai.goal', ''); showGoal(); toast('Goal cleared'); }; }
+async function runCommand(line){
+  const m = /^(\/\w+)\s*([\s\S]*)$/.exec(line.trim()); if(!m) return false;
+  const [, c, rest] = m, arg = rest.trim();
+  $('#q').value = ''; grow(); $('#slash').hidden = true;
+  if(c === '/goal'){ goal = arg.slice(0, 400); store.set('ai.goal', goal); showGoal(); toast(goal ? 'Goal set — every answer works toward it' : 'Goal cleared'); }
+  else if(c === '/rule'){ if(arg.length < 5) return toast('Write the rule after /rule'); const r = await api.rule(arg).catch(()=>({})); toast(r.ok ? 'Rule added — every answer follows it' : 'Could not add the rule'); }
+  else if(c === '/remember'){ if(arg.length < 3) return toast('Write what to remember after /remember'); const r = await api.remember(arg).catch(()=>({})); toast(r.ok ? 'Remembered' : 'Could not save that'); loadLearned(); }
+  else if(c === '/fresh'){ if(arg) ask(arg, {fresh: true}); }
+  else if(c === '/connectors') openConn(true);
+  else if(c === '/learned') openPanel(true);
+  else if(c === '/file') $('#fileIn').click();
+  else if(c === '/cloud'){ const on = !/^off$/i.test(arg); store.set('ai.cloud', on); $('#cloudTog').checked = on; toast('Cloud AI for hard questions: ' + (on ? 'on' : 'off')); }
+  else if(c === '/theme'){ const t = /^(light|dark)$/i.test(arg) ? arg.toLowerCase() : 'auto'; store.set('ai.theme', t); applyTheme(t); toast('Theme: ' + t); }
+  else if(c === '/new') $('#clear').click();
+  else if(c === '/help'){ const el = turnEl('/help'); finish(el, '/help', {text: COMMANDS.map(x=>'- `' + x.c + (x.a ? ' ' + x.a : '') + '` — ' + x.d).join('\n'), model: 'Commands', by: 'Type / in the box to see these'}, []); }
+  else { toast('No such command — type / to see them'); return true; }
+  return true;
+}
+$('#q').addEventListener('input', ()=>{ slashSel = 0; slashMenu(); });
+$('#q').addEventListener('keydown', e=>{
+  if($('#slash').hidden) return;
+  const list = slashMenu();
+  if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); e.stopImmediatePropagation(); slashSel = (slashSel + (e.key === 'ArrowDown' ? 1 : list.length - 1)) % list.length; slashMenu(); }
+  else if((e.key === 'Tab' || e.key === 'Enter') && list[slashSel] && !/\s/.test($('#q').value)){ e.preventDefault(); e.stopImmediatePropagation(); pickCommand(list[slashSel].c); }
+  else if(e.key === 'Escape'){ $('#slash').hidden = true; }
+}, true);
+
+/* ---------------------------------------------------------------- connectors: what it may use */
+const BUILTIN = [
+  {k: 'web', n: 'Web search', d: 'Your search engine on the Mac; your relay elsewhere'},
+  {k: 'read', n: 'Reading pages', d: 'Opens the best results and reads them'},
+  {k: 'calc', n: 'Calculator', d: 'Sums, dates, EMI, compound interest — worked out exactly'},
+  {k: 'market', n: 'Market prices', d: 'Real prices and technical analysis (indices, shares, crypto, gold)'},
+  {k: 'code', n: 'Running code', d: 'Tests the code it writes, in a sandbox (on the Mac)'},
+  {k: 'connectors', n: 'Data connectors', d: 'The sources below'},
+];
+let disabled = store.get('ai.off', []);
+let connList = [];
+async function loadConn(){
+  if(mode === 'mac'){ try{ connList = (await fetch(HELPER + '/connectors').then(r=>r.json())).list || []; }catch(e){ connList = []; } }
+  const box = $('#conn');
+  box.innerHTML = `<h3>Built in</h3>` + BUILTIN.map(b=>`<label class="sw"><input type="checkbox" data-k="${b.k}" ${disabled.includes(b.k) ? '' : 'checked'}><span><b>${esc(b.n)}</b><small>${esc(b.d)}</small></span></label>`).join('') +
+    `<h3>Data connectors</h3>` + (mode === 'mac' ? (connList.length ? connList.map((c, i)=>`<label class="sw"><input type="checkbox" data-i="${i}" ${c.on !== false ? 'checked' : ''}><span><b>${esc(c.name)}</b><small>${esc(c.description)}</small><small>${esc(c.url)}</small></span>${c.preset ? '' : `<button class="ghost x" type="button" data-del="${i}">Remove</button>`}</label>`).join('') : '<p class="sub">None.</p>') +
+    `<h3>Add a connector</h3><p class="sub">Any web address that answers a query — put <code>{query}</code> where the question goes. It is called from your Mac; addresses inside your home network are not allowed.</p>
+    <form class="cform" id="cform"><input id="cn" placeholder="Name, e.g. Cricket scores" maxlength="40" required><input id="cd" placeholder="What it is for (the AI reads this to decide when to use it)" maxlength="240" required><input id="cu" placeholder="https://api.example.com/search?q={query}" required><button class="btn">Add connector</button></form>`
+    : '<p class="sub">Data connectors run on your Mac. Open this page on the Mac (with the helper running) to use and manage them.</p>');
+  box.querySelectorAll('[data-k]').forEach(i=>i.onchange = () => { disabled = BUILTIN.map(b=>b.k).filter(k=>{ const x = box.querySelector('[data-k="' + k + '"]'); return x && !x.checked; }); store.set('ai.off', disabled); toast((i.checked ? 'On: ' : 'Off: ') + BUILTIN.find(b=>b.k === i.dataset.k).n); });
+  const save = async list => { const r = await post('/connectors', {list}).catch(()=>null); connList = (r && r.list) || connList; loadConn(); };
+  box.querySelectorAll('[data-i]').forEach(i=>i.onchange = () => { connList[+i.dataset.i].on = i.checked; save(connList); });
+  box.querySelectorAll('[data-del]').forEach(b=>b.onclick = () => { connList.splice(+b.dataset.del, 1); save(connList); });
+  const f = box.querySelector('#cform');
+  if(f) f.onsubmit = async e => { e.preventDefault(); const c = {name: $('#cn').value.trim(), description: $('#cd').value.trim(), url: $('#cu').value.trim(), on: true};
+    if(!/\{query\}/.test(c.url) || !/^https:\/\//.test(c.url)) return toast('The address must start with https:// and contain {query}');
+    const before = connList.length; await save(connList.concat([c])); toast(connList.length > before ? 'Connector added' : 'That connector was not accepted'); };
+}
+const openConn = on => { $('#connPanel').classList.toggle('open', on); $('#scrim').classList.toggle('open', on); if(on) loadConn(); };
+$('#openConn').onclick = () => openConn(true);
+$('#closeConn').onclick = () => openConn(false);
+
+/* ---------------------------------------------------------------- theme, sign-in and the account menu */
+const applyTheme = t => { if(t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  document.querySelectorAll('#themeSeg button').forEach(b=>b.setAttribute('aria-checked', String(b.dataset.t === (t || 'auto')))); };
+applyTheme(store.get('ai.theme', 'auto'));
+document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick = () => { store.set('ai.theme', b.dataset.t); applyTheme(b.dataset.t); });
+$('#cloudTog').checked = !!store.get('ai.cloud', false);
+$('#cloudTog').onchange = () => store.set('ai.cloud', $('#cloudTog').checked);
+// with the switch on, the AI keys this browser holds go with the question to the helper on this Mac (used for that answer only)
+const cloudKeys = () => { if(!store.get('ai.cloud', false) || typeof MoneyAI === 'undefined') return null;
+  try{ const k = MoneyAI.aiSettings().keys || {}; const c = Object.fromEntries(Object.entries(k).filter(([n, v])=>v && /^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/.test(n))); return Object.keys(c).length ? {keys: c} : null; }catch(e){ return null; } };
+const menuOpen = on => { $('#acctMenu').hidden = !on; $('#acctBtn').setAttribute('aria-expanded', String(on)); };
+$('#acctBtn').onclick = e => { e.stopPropagation(); menuOpen($('#acctMenu').hidden); };
+document.addEventListener('click', e=>{ if(!$('#acctMenu').hidden && !e.target.closest('.acct')) menuOpen(false); });
+// the same sign-in as the other apps (Money Home's session, in this tab): your own password once set, else the default
+const SESSION = 'money-home-session';
+const signedIn = () => { try{ return sessionStorage.getItem(SESSION) === 'yes'; }catch(e){ return false; } };
+async function checkLogin(u, p){
+  if(!LOCAL_PAGE && typeof MoneyShared === 'undefined'){ try{ await loadScript('/ai/ai.js'); }catch(e){} }
+  if(typeof MoneyShared !== 'undefined') return MoneyShared.checkLogin(u, p);
+  return String(u).trim().toLowerCase() === 'admin' && p === 'admin';
+}
+$('#loginForm').onsubmit = async e => {
+  e.preventDefault();
+  if(!(await checkLogin($('#lu').value, $('#lp').value))){ $('#lerr').hidden = false; $('#lp').select(); return; }
+  try{ sessionStorage.setItem(SESSION, 'yes'); sessionStorage.setItem('ai.user', $('#lu').value.trim()); }catch(_){}
+  $('#login').hidden = true; $('#lp').value = ''; start();
+};
+$('#logout').onclick = () => { try{ sessionStorage.removeItem(SESSION); }catch(_){} menuOpen(false); location.reload(); };
+let started = false, ready = null;
+function start(){
+  if(started) return; started = true;
+  try{ $('#whoName').textContent = sessionStorage.getItem('ai.user') || 'you'; }catch(_){}
+  // the conversation so far comes back after a reload
+  history.forEach(h=>{ if(h && h.answer){ const el = turnEl(h.q); finish(el, h.q, h.answer, h.steps || [], h.traces || []); } });
+  ready = detect(); showGoal(); $('#q').focus();
+}
+if(signedIn()) start(); else { $('#login').hidden = false; $('#lu').focus(); }
 </script>
 </body>
 </html>
