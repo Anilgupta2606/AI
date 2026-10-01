@@ -7,7 +7,7 @@
      ai -f notes.txt "question" answer from a file (text, markdown, CSV, JSON, HTML) as well as the web
      ai --no-web / --no-ai      only what it knows / only the web's own sentences (no AI)
      ai --json "question"       the answer as JSON (for scripts)
-     ai --cloud "question"      a hard question may be written by a cloud model (keys from ai setup)
+     ai --cloud "question"      a hard question may be written by a cloud model     (ai cloud on|off: always)
      ai setup                   keys for the search services and the AIs (kept in ~/.money-ai/, only on this Mac)
      ai status                  what is set up
      ai rules                   the rules every answer is checked against, yours (~/.money-ai/rules.md) and what it learned
@@ -179,7 +179,7 @@ async function answer(question, o){
       const ur = userRules();
       const out = await runAgent(question, {search, read, chat, pick, calc, files: o.files, history: o.history, onStep: step, onTrace: o.onTrace, onDraft: o.onDraft, attachments: o.attachments,
         goal: o.goal, profile: profile().map(p=>p.text), disabled: o.disabled || [], connectors: (o.disabled || []).includes('connectors') ? [] : getConnectors(), callConnector,
-        cloud: (o.cloud || o.cloudKeys) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}) : null,
+        cloud: (o.cloud || o.cloudKeys || cfg.ai.cloud) && AI.aiStatus().some(x=>!/ollama|webllm/.test(x.id)) ? (system, turns) => AI.chat(system, turns, {skip: ['ollama', 'webllm'], maxTokens: 3000}) : null,
         market: (o.disabled || []).includes('market') ? null : (q, tf) => Market.analyse(q, tf), runCode: (o.disabled || []).includes('code') ? null : a => Runner.run(a), review: Web.review, isTimely: Web.isTimely, datesIn: Web.datesIn, remember: Web.remember, cases: Web.casesFor(question), timing: Web.timingNote(question), rules: Object.values(Web.RULES), userRules: ur.map(r=>'- ' + r).join('\n'), mistakes: Web.pastMistakes()});
       done(); return out;
     }
@@ -243,6 +243,7 @@ async function status(){
   console.log(bold('\nWorks on its own: ') + (up && localModel ? green('yes') + ' — your search engine ' + green('(SearXNG, running)') + ', pages read on this Mac, model ' + green(localModel) + ' on this Mac'
     : yellow((up ? '' : 'SearXNG is not running (launchctl kickstart -k gui/$(id -u)/com.moneyai.searxng). ') + (localModel ? '' : 'No model on this Mac (ollama pull qwen3:4b-instruct).'))));
   console.log(bold('Backups (used only if yours is down): ') + ([cfg.search.tavily && cfg.search.tavily.length ? 'Tavily ×' + cfg.search.tavily.length : '', cfg.search.serpapi ? 'SerpApi' : '', cfg.search.googleKey && cfg.search.googleCx ? 'Google' : ''].filter(Boolean).join(', ') || 'none') + (cfg.search.jina ? ', Jina Reader' : ''));
+  console.log(bold('Cloud AI for hard questions: ') + (cfg.ai.cloud ? green('on') : 'off') + (cloudNames().length ? dim(' — keys: ' + cloudNames().join(', ')) : dim(' — no cloud keys')));
   const st = AI.aiStatus();
   console.log(bold('AI: ') + (st.length ? st.map(x=>x.name + (x.resting ? yellow(' (resting)') : '')).join(' → ') : yellow('none — run  ai setup')) + '\n');
 }
@@ -352,6 +353,19 @@ export function addRule(text){
   return true;
 }
 
+/* AI keys from the page (Money Home's Setup holds them in the browser): saved for the terminal and the helper in
+   ~/.money-ai/config.json (readable only by you). Only AI services; the answer says which, never the keys. */
+const CLOUD = /^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/;
+export function saveKeys(keys){
+  const c = readJson(CONFIG, {search: {}, ai: {keys: {}}});
+  c.ai = c.ai || {keys: {}}; c.ai.keys = c.ai.keys || {};
+  const got = Object.entries(keys || {}).filter(([k, v])=>CLOUD.test(k) && typeof v === 'string' && v.trim().length >= 10 && v.length < 400 && !/\s/.test(v.trim()));
+  got.forEach(([k, v])=>{ c.ai.keys[k] = v.trim(); });
+  writeJson(CONFIG, c);
+  return got.map(([k])=>k);
+}
+export function cloudNames(){ const k = (config().ai || {}).keys || {}; return Object.keys(k).filter(n=>CLOUD.test(n) && k[n]); }
+
 /* the published page, on this Mac, swaps lessons with the terminal's memory (the page's sync then carries them to your phone) */
 const onlyAi = b => ({lessons: Object.fromEntries(Object.entries((b && b.lessons) || {}).filter(([, L])=>L && L.app === 'ai')),
   forgotten: Object.fromEntries(Object.entries((b && b.forgotten) || {}).filter(([id])=>id.startsWith('ai:'))), updatedAt: (b && b.updatedAt) || 0});
@@ -385,6 +399,14 @@ async function main(){
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
   if(rest[0] === 'rules' && rest.length === 1) return rules();
+  if(rest[0] === 'cloud' && rest.length <= 2){
+    const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
+    if(/^(on|off)$/.test(rest[1] || '')){ c.ai.cloud = rest[1] === 'on'; writeJson(CONFIG, c); }
+    const names = cloudNames();
+    console.log(bold('Cloud AI for hard questions: ') + (c.ai.cloud ? green('on') : 'off') + dim('  (ai cloud on | off · one question: ai --cloud "…")'));
+    console.log('Cloud AIs with keys: ' + (names.length ? names.join(', ') : yellow('none — use "Copy my AI keys to this Mac" on the AI page, or ai setup')));
+    return;
+  }
   if(rest[0] === 'teach' && rest.length > 1) return teach(rest.slice(1).join(' '));
   if(rest[0] === 'forget' && /^\d+$/.test(rest[1] || '') && rest.length === 2) return forgetLesson(rest[1]);
   if(rest[0] === 'ui'){ const url = 'http://127.0.0.1:8899/'; let up = false; try{ up = (await fetch(url + 'health')).ok; }catch(e){}

@@ -43,11 +43,12 @@ export function serve(port){
     const samePage = req.headers['sec-fetch-site'] === 'same-origin';
     if(u.pathname !== '/health' && !samePage && !ALLOWED.some(r=>r.test(origin))) return send(403, {error: 'Not allowed.'});
     // the AI itself: only from the page above (not other sites)
-    if(['/ask', '/teach', '/forget', '/learned', '/brain', '/warm', '/feedback', '/connectors', '/rule', '/remember'].includes(u.pathname)){
+    if(['/ask', '/teach', '/forget', '/learned', '/brain', '/warm', '/feedback', '/connectors', '/rule', '/remember', '/keys'].includes(u.pathname)){
       try{
         const B = await brain();
         if(u.pathname === '/learned') return send(200, B.learned());
         if(u.pathname === '/warm') return send(200, {ok: await B.warm()});
+        if(u.pathname === '/keys' && req.method === 'GET') return send(200, {cloud: B.cloudNames()});
         if(u.pathname === '/connectors' && req.method === 'GET') return send(200, {list: B.getConnectors(), presets: B.PRESETS});
         if(u.pathname === '/brain' && req.method === 'GET') return send(200, B.brainExport());
         if(u.pathname === '/brain') return send(200, {ok: true, changed: B.brainMerge(await body(req))});
@@ -58,6 +59,7 @@ export function serve(port){
         if(u.pathname === '/feedback') return send(200, B.feedback(d));
         if(u.pathname === '/connectors') return send(200, {list: B.saveConnectors(d.list)});
         if(u.pathname === '/rule') return send(200, {ok: B.addRule(d.text)});
+        if(u.pathname === '/keys' && req.method === 'POST') return send(200, {saved: B.saveKeys(d.keys)});
         if(u.pathname === '/remember') return send(200, {ok: B.remember(d.text)});
         // /ask: steps as they happen, then the answer — one JSON object per line
         const q = String(d.question || '').trim().slice(0, 2000);
@@ -68,7 +70,7 @@ export function serve(port){
         const t = Date.now();
         try{ const out = await B.answer(q, {history, files: [], fresh: !!d.fresh, goal: String(d.goal || '').slice(0, 400),
           disabled: (Array.isArray(d.disabled) ? d.disabled : []).filter(x=>/^(web|read|calc|market|code|connectors)$/.test(x)),
-          attachments: (Array.isArray(d.attachments) ? d.attachments : []).slice(0, 5).map(a=>({name: String(a && a.name || 'file').replace(/[\\/]/g, '_').slice(0, 120), text: String(a && a.text || '').slice(0, 300000)})).filter(a=>a.text.trim()), cloudKeys: d.cloud && d.cloud.keys && typeof d.cloud.keys === 'object' ? d.cloud.keys : null, onStep: s=>line({step: s}), onTrace: t=>line({trace: t}), onDraft: (()=>{ let at = 0; return t=>{ if(Date.now() - at > 150){ at = Date.now(); line({draft: String(t).slice(-6000)}); } }; })()}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
+          attachments: (Array.isArray(d.attachments) ? d.attachments : []).slice(0, 5).map(a=>({name: String(a && a.name || 'file').replace(/[\\/]/g, '_').slice(0, 120), text: String(a && a.text || '').slice(0, 300000)})).filter(a=>a.text.trim()), cloudKeys: d.cloud && d.cloud.keys && typeof d.cloud.keys === 'object' && Object.keys(d.cloud.keys).length ? d.cloud.keys : null, cloud: !!d.cloud, onStep: s=>line({step: s}), onTrace: t=>line({trace: t}), onDraft: (()=>{ let at = 0; return t=>{ if(Date.now() - at > 150){ at = Date.now(); line({draft: String(t).slice(-6000)}); } }; })()}); line({answer: Object.assign({}, out, {q, secs: Math.round((Date.now() - t) / 1000)})}); }
         catch(e){ line({error: String(e.message || e)}); }
         return res.end();
       }catch(e){ return send(500, {error: String(e.message || e)}); }

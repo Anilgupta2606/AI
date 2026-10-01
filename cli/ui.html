@@ -197,6 +197,7 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
 .tog input{margin-top:3px; accent-color:var(--think)}
 .tog small{display:block; color:var(--mut); font-size:12px; line-height:1.45; margin-top:2px}
 .wide{width:100%; justify-content:center; text-align:center}
+.keysrow{margin:0 0 12px} .keysrow small{display:block; color:var(--mut); font-size:12px; line-height:1.45; margin-top:6px}
 .login{position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:16px; background:radial-gradient(900px 500px at 80% 0%, var(--page2), transparent 60%), var(--page)}
 .lcard{width:min(380px,100%); background:var(--card); border:1px solid var(--line); border-radius:24px; padding:28px 24px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px}
 .lcard h1{font:700 30px var(--display); letter-spacing:-.02em; margin:6px 0 0}
@@ -257,6 +258,7 @@ code{font-family:var(--mono); font-size:.85em; background:var(--page2); padding:
       <div class="mlabel">Theme</div>
       <div class="seg" id="themeSeg" role="radiogroup" aria-label="Theme"><button data-t="auto" role="radio">Auto</button><button data-t="light" role="radio">Light</button><button data-t="dark" role="radio">Dark</button></div>
       <label class="tog"><input type="checkbox" id="cloudTog"><span><b>Cloud AI for hard questions</b><small>Long code, deep analysis, or when its checks fail twice: a bigger free model (your keys in Setup) writes the answer from what was found here. Off: everything stays on this Mac.</small></span></label>
+      <div class="keysrow" id="keysRow" hidden><button class="ghost wide" id="copyKeys" type="button">Copy my AI keys to this Mac</button><small id="keysNote">So the terminal (ai --cloud) and this Mac can use the cloud AIs from your Setup. Saved only on this Mac, readable only by you.</small></div>
       <button class="ghost wide" id="logout">Sign out</button>
     </div>
   </div>
@@ -632,6 +634,7 @@ async function detect(){
     pill('#stWhere', 'On this Mac', 'on');
     pill('#stSearch', 'Your search engine', 'on');
     showModel(d.model || 'No model (ollama pull qwen3:4b-instruct)', !!d.model);
+    if(!LOCAL_PAGE && typeof MoneyAI !== 'undefined' && Object.keys(browserKeys()).length) $('#keysRow').hidden = false;
     fetch(HELPER + '/warm', {method: 'POST', headers: {'content-type': 'application/json'}, body: '{}'}).catch(()=>{});     // load the model now, not on the first question
     swap();
   } else if(engineHere()){
@@ -798,8 +801,8 @@ document.querySelectorAll('#themeSeg button').forEach(b=>b.onclick = () => { sto
 $('#cloudTog').checked = !!store.get('ai.cloud', false);
 $('#cloudTog').onchange = () => store.set('ai.cloud', $('#cloudTog').checked);
 // with the switch on, the AI keys this browser holds go with the question to the helper on this Mac (used for that answer only)
-const cloudKeys = () => { if(!store.get('ai.cloud', false) || typeof MoneyAI === 'undefined') return null;
-  try{ const k = MoneyAI.aiSettings().keys || {}; const c = Object.fromEntries(Object.entries(k).filter(([n, v])=>v && /^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/.test(n))); return Object.keys(c).length ? {keys: c} : null; }catch(e){ return null; } };
+const browserKeys = () => { try{ const k = MoneyAI.aiSettings().keys || {}; return Object.fromEntries(Object.entries(k).filter(([n, v])=>v && /^(gemini|groq|cerebras|mistral|openrouter|anthropic)$/.test(n))); }catch(e){ return {}; } };
+const cloudKeys = () => !store.get('ai.cloud', false) ? null : {keys: typeof MoneyAI === 'undefined' ? {} : browserKeys()};
 const menuOpen = on => { $('#acctMenu').hidden = !on; $('#acctBtn').setAttribute('aria-expanded', String(on)); };
 $('#acctBtn').onclick = e => { e.stopPropagation(); menuOpen($('#acctMenu').hidden); };
 document.addEventListener('click', e=>{ if(!$('#acctMenu').hidden && !e.target.closest('.acct')) menuOpen(false); });
@@ -816,6 +819,13 @@ $('#loginForm').onsubmit = async e => {
   if(!(await checkLogin($('#lu').value, $('#lp').value))){ $('#lerr').hidden = false; $('#lp').select(); return; }
   try{ sessionStorage.setItem(SESSION, 'yes'); sessionStorage.setItem('ai.user', $('#lu').value.trim()); }catch(_){}
   $('#login').hidden = true; $('#lp').value = ''; start();
+};
+$('#copyKeys').onclick = async () => {
+  const keys = browserKeys(); if(!Object.keys(keys).length) return toast('No AI keys in this browser — add them in Setup');
+  const r = await post('/keys', {keys}).catch(()=>null);
+  const names = (r && r.saved) || [];
+  $('#keysNote').textContent = names.length ? 'Saved on this Mac: ' + names.join(', ') + '. In Terminal: ai cloud on (always) or ai --cloud "…" (once).' : 'Nothing was saved — is the helper running?';
+  toast(names.length ? 'AI keys saved on this Mac: ' + names.join(', ') : 'Could not save the keys');
 };
 $('#logout').onclick = () => { try{ sessionStorage.removeItem(SESSION); }catch(_){} menuOpen(false); location.reload(); };
 let started = false, ready = null;
