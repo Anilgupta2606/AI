@@ -54,6 +54,7 @@ Everything the AI can do and every setting. In the terminal: `ai help`, or `/hel
 | | |
 |---|---|
 | `ai status` | What is running: your search engine, the model on this Mac, cloud AIs, backups. |
+| `ai models` | Which model answers which kind of question (general, code, analysis, vision); set from the model race (node test/exam/pick-models.mjs --apply) or ai models set <kind> <model>. |
 | `ai model [name\|auto]` | Which model answers (auto: the best general one, the coding model for code). ai --model <name> "…" for one question. |
 | `ai cloud on \| off` | Cloud AI for hard questions, always or never. ai cloud shows which cloud keys it has. |
 | `ai off <tool> · ai on <tool>` | Switch a tool off or on for the terminal: web, read, calc, market, code, connectors. |
@@ -82,7 +83,7 @@ Everything the AI can do and every setting. In the terminal: `ai help`, or `/hel
 | `com.moneyai.searxng` | Your own search engine (SearXNG) on port 8888. |
 | `com.moneyai.local` | The helper on port 8899: the AI page, and search/reading for your apps. |
 | `com.moneyai.selfexam` | The weekly self-exam, Sundays 10:00 (or when the Mac next wakes). |
-| `Ollama` | The models on this Mac: qwen3:4b-instruct (questions), qwen2.5-coder:3b (code), gemma3:4b (pictures). |
+| `Ollama` | The models on this Mac, one in memory at a time (unloaded after 10 idle minutes). Each question goes to the model for its kind; "Loading…" shows when a switch is needed. |
 | `Restart one` | launchctl kickstart -k gui/$(id -u)/com.moneyai.local   (or .searxng) |
 
 ## How it answers

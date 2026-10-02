@@ -143,10 +143,17 @@ async function answer(question, o){
     // a programming question goes to the coding model when it is on this Mac (better code for its size)
     const coder = models.find(m=>/coder/i.test(m));
     const codeQ = /\b(write|build|create|make|implement|fix|debug|refactor)\b[\s\S]{0,40}\b(code|program|script|function|class|app|algorithm|query)\b|\b(python|javascript|java|c\+\+|sql|typescript|bash)\b[\s\S]{0,30}\b(program|code|script|function|query)\b|```/i.test(question);
-    // a model you chose (ai model <name>, --model, MONEY_AI_MODEL) answers everything, code too
+    // THE RIGHT MODEL FOR THE QUESTION: code, analysis (tables, sums, money, markets), or general — each kind has its
+    // model (ai models; set from the model race), unless you chose one for everything (ai model <name>, --model)
     const chosen = o.model || process.env.MONEY_AI_MODEL || cfg.ai.model;
     if(chosen && !models.includes(chosen)) throw new Error('The model ' + chosen + ' is not on this Mac (ollama pull ' + chosen + ', or ai model auto)');
-    const useModel = chosen || (codeQ && coder ? coder : model);
+    const routes = routesFor(cfg, models);
+    const kind = codeQ ? 'code' : (attached && (o.attachments || []).concat(fileSources).some(a=>/\.(csv|tsv)$/i.test(a.name || a.title || '')))
+      || /\b(analy[sz]e|analysis|average|total|sum|percent(age)?|growth|trend|compare|comparison|statistics?|forecast|calculate|emi|sip|cagr|interest|returns?|budget|invest(ment)?|loan|inflation|stock|shares?|nifty|sensex|market|portfolio|profit|revenue|cost)\b/i.test(question) ? 'analysis' : 'general';
+    const useModel = chosen || routes[kind] || model;
+    // not in memory yet: say so (a first load takes a few seconds on this Mac)
+    try{ const ps = ((await (await _fetch(ollama.replace(/\/+$/, '') + '/api/ps')).json()).models || []).map(m=>m.name);
+      if(!ps.includes(useModel)) step('⏳ Loading the ' + (chosen ? '' : kind + ' ') + 'model (' + useModel + ') — the first answer after a switch takes a few seconds longer'); }catch(e){}
     if(model || o.model || cfg.ai.model){
       // your search engine not answering: restart it (a few seconds) before any backup is used
       let localUp = await Local.searxngUp();
@@ -165,7 +172,7 @@ async function answer(question, o){
       // streamed, so the answer can be shown as it is written; kept loaded for 30 minutes (no reload between questions)
       const chat = async (messages, tools, opts) => {
         if(o.signal && o.signal.aborted) throw new Error('Stopped');
-        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', signal: o.signal, body: JSON.stringify({model: useModel, messages, tools, stream: true, think: false, keep_alive: '30m', options: {temperature: 0.2, num_ctx: 12288}})});
+        const r = await fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', signal: o.signal, body: JSON.stringify({model: useModel, messages, tools, stream: true, think: false, keep_alive: '10m', options: {temperature: 0.2, num_ctx: 12288}})});
         if(!r.ok) throw new Error('The model answered ' + r.status + ': ' + (await r.text()).slice(0, 200));
         let content = '', calls = [], buf = '', last = 0;
         const dec = new TextDecoder();
@@ -184,10 +191,10 @@ async function answer(question, o){
           }
         }
         if(opts && opts.onDelta && !calls.length) opts.onDelta(content);
-        return {message: {role: 'assistant', content, tool_calls: calls.length ? calls : undefined}, model: useModel};
+        return {message: {role: 'assistant', content, tool_calls: calls.length ? calls : undefined}, model: useModel + (chosen ? '' : ' · ' + kind + ' model')};
       };
       // pictures: a model on this Mac that can see (gemma3 and the like) describes them and reads their text
-      const vision = models.find(m=>/gemma3|llava|vision|qwen2\.5vl|qwen2\.5-vl|minicpm-v|moondream|granite3\.2-vision/i.test(m));
+      const vision = routes.vision;
       const see = vision ? async (im, q) => {
         step('🖼 Looking at the picture with ' + vision);
         const r = await _fetch(ollama.replace(/\/+$/, '') + '/api/chat', {method: 'POST', body: JSON.stringify({model: vision, stream: false, keep_alive: '10m', options: {temperature: 0.1, num_ctx: 8192},
@@ -367,7 +374,7 @@ export async function verifyClaims(out, question, o){
     if(!raw){
       const host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
       if(!host || !m) return null;
-      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt: 'You are a strict fact checker. Output JSON only.\n\n' + prompt, format: 'json', stream: false, think: false, keep_alive: '30m', options: {temperature: 0, num_predict: 400, num_ctx: 8192}})});
+      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt: 'You are a strict fact checker. Output JSON only.\n\n' + prompt, format: 'json', stream: false, think: false, keep_alive: '10m', options: {temperature: 0, num_predict: 400, num_ctx: 8192}})});
       raw = (await r.json()).response || ''; by = m + ' (second pass)';
     }
   }catch(e){ return null; }
@@ -393,6 +400,24 @@ function keepAnswer(q, out){
   try{ writeJson(CACHE, Object.fromEntries(keep)); }catch(e){}
 }
 
+/* ROUTES: which model answers which kind of question. Saved by the model race (test/exam/pick-models.mjs) or by
+   ai models set <kind> <model>; else: the best general model, the coding model for code, a model that can see for pictures. */
+export const KINDS = ['general', 'code', 'analysis', 'vision'];
+function routesFor(cfg, models){
+  const general = models.filter(m=>!/coder|embed|guardian/i.test(m));
+  const best = general.length ? engine(cfg).AI.rankModels('ollama', general, 'smart')[0] : models[0];
+  const def = {general: best, code: models.find(m=>/coder/i.test(m)) || best, analysis: best, vision: models.find(m=>/gemma[34]|llava|vision|qwen2\.5-?vl|minicpm-v|ministral-3|qwen3\.5/i.test(m)) || null};
+  const saved = cfg.ai.routes || {};
+  const out = {};
+  KINDS.forEach(k=>{ out[k] = saved[k] && models.includes(saved[k]) ? saved[k] : def[k]; });
+  return out;
+}
+export function setRoutes(r){
+  const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
+  c.ai.routes = Object.assign({}, c.ai.routes || {}, Object.fromEntries(Object.entries(r || {}).filter(([k, v])=>KINDS.includes(k) && typeof v === 'string' && v)));
+  writeJson(CONFIG, c); return c.ai.routes;
+}
+
 /* three short follow-up questions for an answer: a fast cloud model when cloud is on, else a short local run */
 export async function followUps(question, text, o){
   o = o || {};
@@ -406,7 +431,7 @@ export async function followUps(question, text, o){
     else {
       const host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
       if(!host || !m) return [];
-      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt, stream: false, think: false, keep_alive: '30m', options: {temperature: 0.4, num_predict: 90, num_ctx: 4096}})});
+      const r = await _fetch(host + '/api/generate', {method: 'POST', signal: o.signal, body: JSON.stringify({model: m, prompt, stream: false, think: false, keep_alive: '10m', options: {temperature: 0.4, num_predict: 90, num_ctx: 4096}})});
       out = (await r.json()).response || '';
     }
   }catch(e){ return []; }
@@ -415,7 +440,7 @@ export async function followUps(question, text, o){
 export async function warm(){
   const cfg = config(), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, ''), m = await localModel();
   if(!host || !m) return false;
-  try{ await fetch(host + '/api/generate', {method: 'POST', body: JSON.stringify({model: m, prompt: '', keep_alive: '30m'})}); return true; }catch(e){ return false; }
+  try{ await fetch(host + '/api/generate', {method: 'POST', body: JSON.stringify({model: m, prompt: '', keep_alive: '10m'})}); return true; }catch(e){ return false; }
 }
 export async function localModel(){
   const cfg = config(), {AI} = engine(cfg), host = String(cfg.ai.keys.ollama || '').replace(/\/+$/, '');
@@ -688,6 +713,21 @@ async function main(){
   if(rest[0] === 'setup') return setup();
   if(rest[0] === 'status') return status();
   if(rest[0] === 'rules' && rest.length === 1) return rules();
+  if(rest[0] === 'models'){
+    const c = config();
+    let ms = []; try{ ms = ((await (await _fetch(String(c.ai.keys.ollama || 'http://localhost:11434').replace(/\/+$/, '') + '/api/tags')).json()).models || []).map(m=>m.name); }catch(e){}
+    if(rest[1] === 'set' && KINDS.includes(rest[2]) && rest[3]){ if(!ms.includes(rest[3])) return console.log(yellow(rest[3] + ' is not on this Mac')); setRoutes({[rest[2]]: rest[3]}); }
+    if(rest[1] === 'auto'){ const cc = readJson(CONFIG, {}); if(cc.ai){ delete cc.ai.routes; writeJson(CONFIG, cc); } }
+    const r = routesFor(config(), ms);
+    console.log(bold('\nWhich model answers what') + dim('  (ai models set <kind> <model> · ai models auto)'));
+    console.log('  ' + 'general'.padEnd(10) + green(r.general || '—') + dim('   questions, research, writing'));
+    console.log('  ' + 'code'.padEnd(10) + green(r.code || '—') + dim('   programs, functions, fixing code'));
+    console.log('  ' + 'analysis'.padEnd(10) + green(r.analysis || '—') + dim('   tables, sums, money, markets'));
+    console.log('  ' + 'vision'.padEnd(10) + green(r.vision || '—') + dim('   reading pictures'));
+    if(c.ai.model) console.log(yellow('\n  Overridden: ' + c.ai.model + ' answers everything (ai model auto to use the kinds above)'));
+    console.log(dim('\n  On this Mac: ' + ms.join(', ')) + '\n');
+    return;
+  }
   if(rest[0] === 'model' && rest.length <= 2){
     const c = readJson(CONFIG, {search: {}, ai: {keys: {}}}); c.ai = c.ai || {keys: {}};
     if(rest[1]){ if(rest[1] === 'auto') delete c.ai.model; else c.ai.model = rest[1]; writeJson(CONFIG, c); }
