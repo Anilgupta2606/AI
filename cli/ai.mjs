@@ -105,6 +105,7 @@ async function answer(question, o){
   // a follow-up ("and for 10 years?", "what about Bank Nifty?") needs the conversation, so it goes to the model, not the quick tools
   const followUp = (o.history || []).length && /^(and|also|what about|how about|then|so|but|same|now|ok|okay|why|what if)\b|\b(it|that|this|those|them|these|same|above|previous|earlier)\b/i.test(question.trim()) && question.trim().split(/\s+/).length < 14;
   const attached = (o.attachments || []).length > 0;
+  if(imageAsk(question) && !(o.attachments || []).some(a=>a.image)){ step('🎨 Making the picture'); const out = await makeImage(question, o); done(); return out; }
   // about earlier chats ("what did you tell me…"): that is for the AI with your chats, not the quick tools
   const aboutPast = /\b(you (told|said|suggested|gave|recommended)|did you (tell|say)|we (discussed|talked)|last time|earlier (chat|conversation|question)|previous (chat|conversation)|my (earlier|previous|last) (question|chat))\b/i.test(question);
   // the same question a moment ago (no files, not a follow-up): at once
@@ -252,6 +253,7 @@ const show = (out, o) => {
   console.log('\n' + String(out.text || '').replace(/\[(\d+)\]/g, (m)=>cyan(m)) + '\n');
   (out.sources || []).forEach((s, i)=>console.log(dim('  [' + (s.i || i + 1) + '] ' + s.title + (s.url && !/^file:/.test(s.url) ? ' — ' + s.url : ''))));
   if(out.by) console.log(dim('  ' + out.by));
+  if(out.images && out.images[0] && out.images[0].file && tty && process.platform === 'darwin' && !o.json) import('child_process').then(c=>c.execFile('open', [out.images[0].file]));
   console.log('');
 };
 
@@ -398,6 +400,26 @@ function keepAnswer(q, out){
   const all = readJson(CACHE, {}); all[cacheKey(q)] = {at: Date.now(), out: {text: out.text, sources: out.sources, read: out.read, by: out.by, model: out.model, chart: out.chart, trust: out.trust}};
   const keep = Object.entries(all).sort((a, b)=>b[1].at - a[1].at).slice(0, 60);
   try{ writeJson(CACHE, Object.fromEntries(keep)); }catch(e){}
+}
+
+/* PICTURES FROM A DESCRIPTION: "draw / make / generate an image of…" — made by your relay (Cloudflare Workers AI,
+   FLUX.1 schnell, your account's free daily allowance), saved in ~/Pictures/AI Images and shown on the page. */
+export const imageAsk = q => /\b(generate|create|make|draw|design|paint|render|produce|sketch|imagine)\b[\s\S]{0,50}\b(image|picture|photo|illustration|drawing|painting|logo|poster|wallpaper|art(work)?|sketch|icon|banner|portrait|scene)\b|^\s*(an? )?(image|picture|drawing|painting) of\b/i.test(q) && !/\b(describe|explain|what is (in|on)|read) (this|the|my) (image|picture|photo)\b/i.test(q);
+export async function makeImage(prompt, o){
+  o = o || {};
+  const cfg = config(), url = String((cfg.relay || {}).url || process.env.MONEY_AI_RELAY || '').replace(/\/+$/, '');
+  let token = ''; try{ token = fs.readFileSync(path.join(HOME, 'relay-token'), 'utf8').trim(); }catch(e){}
+  if(!url || !token) throw new Error('Pictures are made by your relay: its address and token are not set on this Mac (~/.money-ai/relay-token).');
+  // the description, without "please generate an image of"
+  const desc = String(prompt).replace(/^\s*(please\s+)?(can you\s+)?(generate|create|make|draw|design|paint|render|produce|sketch|imagine)\s+(me\s+)?(an?\s+)?(image|picture|photo|illustration|drawing|painting|artwork|sketch)?\s*(of|showing|with)?\s*/i, '').trim() || prompt;
+  const r = await _fetch(url + '/image?steps=6&prompt=' + encodeURIComponent(desc.slice(0, 900)), {headers: {'x-relay-token': token}, signal: o.signal});
+  const j = await r.json().catch(()=>({error: 'The relay answered ' + r.status}));
+  if(!r.ok || j.error) throw new Error(j.error || 'The relay answered ' + r.status);
+  const dir = path.join(os.homedir(), 'Pictures', 'AI Images'); fs.mkdirSync(dir, {recursive: true});
+  const file = path.join(dir, new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '-' + desc.replace(/[^\w ]/g, '').trim().split(/\s+/).slice(0, 6).join('-').toLowerCase() + '.jpg');
+  fs.writeFileSync(file, Buffer.from(j.image, 'base64'));
+  return {text: 'Here is your picture of **' + desc + '**.\n\nSaved on this Mac: `' + file.replace(os.homedir(), '~') + '`', images: [{b64: j.image, mime: j.mime || 'image/jpeg', file}], sources: [],
+    model: j.model + ', your Cloudflare account', by: 'Made by ' + j.model + ' through your relay · ' + Math.round(j.image.length * 0.75 / 1024) + ' KB'};
 }
 
 /* ROUTES: which model answers which kind of question. Saved by the model race (test/exam/pick-models.mjs) or by

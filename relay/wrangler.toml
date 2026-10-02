@@ -2,3 +2,7 @@
 name = "money-relay"
 main = "worker.js"
 compatibility_date = "2026-09-01"
+
+# Workers AI (image generation on your own account's free allowance)
+[ai]
+binding = "AI"

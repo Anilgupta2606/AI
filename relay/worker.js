@@ -5,6 +5,7 @@
      GET /search?q=…&n=8        web results: Tavily (keys rotated; with the pages' text) -> SerpApi (Google) -> Google
                                 Programmable Search — whichever answers first, so one running out is not a problem
      GET /read?url=…&links=1    a page as clean text (Jina Reader; else a plain fetch), with the links inside it
+     GET /image?prompt=…        a picture from a description (Workers AI, FLUX.1 schnell, your account's free allowance)
      GET /market?u=…            Yahoo Finance prices (chart and symbol search only), for the browser's market analysis
      GET /health                which services are set up (no secrets shown)
    Every call needs the header X-Relay-Token (your own secret). Keys live as Worker secrets, never in the apps or GitHub:
@@ -116,6 +117,15 @@ export default {
         const url = u.searchParams.get('url') || '';
         if(!/^https?:\/\//.test(url)) return json({error: 'Give a full web address.'}, 400, origin);
         out = await read(env, url, u.searchParams.get('links') === '1');
+      } else if(u.pathname === '/image'){
+        // a picture from a description: Workers AI (FLUX.1 schnell) on this Cloudflare account's free daily allowance
+        if(!env.AI) return json({error: 'Image generation is not set up on the relay (Workers AI binding).'}, 501, origin);
+        const prompt = clip(u.searchParams.get('prompt'), 900).trim();
+        if(prompt.length < 3) return json({error: 'Describe the picture.'}, 400, origin);
+        const steps = Math.max(1, Math.min(8, +u.searchParams.get('steps') || 6));
+        const r = await env.AI.run('@cf/black-forest-labs/flux-1-schnell', {prompt, steps});
+        if(!r || !r.image) return json({error: 'No image came back.'}, 502, origin);
+        out = {image: r.image, mime: 'image/jpeg', model: 'FLUX.1 schnell (Workers AI)', prompt};
       } else if(u.pathname === '/market'){
         // prices for the browser's market analysis: only Yahoo Finance's chart and symbol search
         const url = u.searchParams.get('u') || '';

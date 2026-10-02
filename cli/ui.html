@@ -139,6 +139,9 @@ details.how summary .dots{display:inline-flex; gap:3px}
 details.how summary .dots i{width:8px; height:8px; border-radius:50%; background:var(--think)}
 .dots i.search{background:var(--search)!important} .dots i.read{background:var(--read)!important} .dots i.calc{background:var(--calc)!important} .dots i.check{background:var(--check)!important}
 details.how .steps{margin:10px 0 4px}
+.gen{margin:0 0 14px; display:flex; flex-direction:column; gap:8px; align-items:flex-start}
+.gen img{max-width:100%; width:520px; border-radius:16px; border:1px solid var(--line); box-shadow:var(--shadow)}
+.gen .dl{text-decoration:none}
 .chart{margin:0 0 14px; background:var(--page); border:1px solid var(--line); border-radius:16px; padding:12px 12px 8px}
 .chart figcaption{font-size:13px; color:var(--ink2); margin:0 0 6px}
 .chart svg{width:100%; height:auto; display:block}
@@ -495,6 +498,11 @@ function chartSvg(ch){
   </svg>
   <div class="legend"><span><i style="background:var(--ink)"></i>Close ${fmtN(last)}</span><span><i style="background:var(--search)"></i>20-${esc(ch.unit)}</span><span><i style="background:var(--calc)"></i>50-${esc(ch.unit)}</span><span><i style="background:var(--check)"></i>200-${esc(ch.unit)}</span><span><i class="dash" style="border-color:var(--read)"></i>Support</span><span><i class="dash" style="border-color:var(--check)"></i>Resistance</span></div></figure>`;
 }
+// pictures in an answer (made from a description): shown, with a Download button
+const imagesHtml = out => (out.images || []).map((im, i)=>{ const src = im.b64 ? 'data:' + (im.mime || 'image/jpeg') + ';base64,' + im.b64 : im.thumb || '';
+  return src ? `<figure class="gen"><img src="${src}" alt="A generated picture">${im.b64 ? `<a class="ghost dl" download="ai-picture-${Date.now()}-${i}.jpg" href="${src}">Download</a>` : '<figcaption class="sub">Preview (the full picture is in ~/Pictures/AI Images on your Mac)</figcaption>'}</figure>` : ''; }).join('');
+// a small preview to keep in the chat (the full picture is big)
+function preview(b64){ return new Promise(res=>{ const i = new Image(); i.onload = () => { const k = Math.min(1, 384 / Math.max(i.width, i.height)), c = document.createElement('canvas'); c.width = Math.round(i.width * k); c.height = Math.round(i.height * k); c.getContext('2d').drawImage(i, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.7)); }; i.onerror = () => res(''); i.src = 'data:image/jpeg;base64,' + b64; }); }
 function render(out){
   const urls = {}; (out.sources || []).concat(out.read || []).forEach((s, i)=>{ urls[s.i || i + 1] = s.url; });
   const cited = out.sources || [], also = (out.read || []).filter(r=>!cited.some(c=>c.url === r.url));
@@ -503,7 +511,7 @@ function render(out){
   if(cited.length) src += `<div class="srchead">Sources</div><ul class="src">${cited.map(srcCard).join('')}</ul>`;
   if(also.length) src += `<details class="also"><summary>Also read ${also.length} page${also.length === 1 ? '' : 's'}</summary><ul class="src">${also.map(srcCard).join('')}</ul></details>`;
   if(!cited.length && !also.length && usedModel) src += `<p class="memory">From the model's own knowledge — no web pages were read for this answer.</p>`;
-  return chartSvg(out.chart) + markdown(out.text, urls) + src;
+  return imagesHtml(out) + chartSvg(out.chart) + markdown(out.text, urls) + src;
 }
 /* "How it got here": every step, each opening to what it did — searched (and the results), read (the passage),
    worked out, ran (the code and its output), and what the checks sent back. Built live while it works. */
@@ -610,6 +618,8 @@ async function ask(q, opt){
   const done = out => {
     if(steps[0] && steps[0].t === 'Starting') steps.shift();
     finish(el, q, out, steps, traces);
+    const imgs = out.images || [];
+    if(imgs.length) Promise.all(imgs.map(im=>preview(im.b64))).then(p=>{ const h = history.find(x=>x.answer && x.answer.text === out.text); if(h){ h.answer.images = p.filter(Boolean).map(t=>({thumb: t})); store.set('moneyai.history', history); saveChat(); } });
     history.push({q, answer: {text: out.text, sources: out.sources, read: out.read, by: out.by, secs: out.secs, model: out.model, chart: out.chart, trust: out.trust ? {confidence: out.trust.confidence, checked: out.trust.checked, ok: out.trust.ok} : undefined, saved: out.saved}, steps, traces: slim(traces)});
     history = history.slice(-40).map((h, i, all)=>i < all.length - 8 ? Object.assign({}, h, {traces: (h.traces || []).map(t=>({kind: t.kind, title: t.title}))}) : h);
     store.set('moneyai.history', history);
@@ -720,6 +730,14 @@ let opt_fresh = false, opt_files = [];
 const browserContext = () => [goal ? 'Goal: ' + goal : '', ...MoneyBrain.lessons({app: 'ai', topic: 'profile'}).filter(L=>!L.off).map(L=>'About the user: ' + (L.label || L.key)), ...store.get('ai.rules', []).map(r=>'Rule: ' + r)].filter(Boolean).join('\n');
 async function browserAnswer(q, turns, step){
   step('Checking what can be worked out exactly');
+  const relayC = (MoneyAI.aiLocal() || {}).relay;
+  if(/\b(generate|create|make|draw|design|paint|render|produce|sketch|imagine)\b[\s\S]{0,50}\b(image|picture|photo|illustration|drawing|painting|logo|poster|wallpaper|art(work)?|sketch|icon|banner|portrait|scene)\b|^\s*(an? )?(image|picture|drawing|painting) of\b/i.test(q) && relayC && relayC.url && relayC.token){
+    step('🎨 Making the picture');
+    const desc = q.replace(/^\s*(please\s+)?(can you\s+)?(generate|create|make|draw|design|paint|render|produce|sketch|imagine)\s+(me\s+)?(an?\s+)?(image|picture|photo|illustration|drawing|painting|artwork|sketch)?\s*(of|showing|with)?\s*/i, '').trim() || q;
+    const r = await fetch(relayC.url.replace(/\/+$/, '') + '/image?steps=6&prompt=' + encodeURIComponent(desc.slice(0, 900)), {headers: {'x-relay-token': relayC.token}, signal: ctl && ctl.signal});
+    const j = await r.json(); if(!r.ok || j.error) throw new Error(j.error || 'The relay answered ' + r.status);
+    return {text: 'Here is your picture of **' + desc + '**.', images: [{b64: j.image, mime: j.mime}], sources: [], model: j.model + ', your Cloudflare account', by: 'Made by ' + j.model + ' through your relay'};
+  }
   const g = !opt_fresh && !opt_files.length && MoneyWeb.findGood(q);
   if(g) return {text: g.text, sources: g.sources || [], saved: true, model: 'Your saved answer', by: 'Your saved answer from ' + g.at + ' (you marked it 👍)'};
   const relayCfg = (MoneyAI.aiLocal() || {}).relay, hasAi = MoneyAI.aiAvailable();
@@ -952,6 +970,7 @@ const COMMANDS = [
   {c: '/cloud', a: 'on | off', d: 'Let a bigger cloud model write the hard answers'},
   {c: '/theme', a: 'auto | light | dark', d: 'Change the look'},
   {c: '/schedule', a: '', d: 'Scheduled tasks — a question asked for you every day at a time'},
+  {c: '/image', a: 'a description', d: 'Make a picture from a description'},
   {c: '/chats', a: '', d: 'Your past chats — open one to carry on (also /resume)'},
   {c: '/new', a: '', d: 'Start a new chat (the last one stays in Chats)'},
   {c: '/help', a: '', d: 'Show all commands'},
@@ -993,6 +1012,7 @@ async function runCommand(line){
   else if(c === '/new') newChat();
   else if(c === '/chats' || c === '/resume') openChats(true);
   else if(c === '/schedule') openTasks(true);
+  else if(c === '/image'){ if(arg) ask('Generate an image of ' + arg); else toast('Describe the picture after /image'); }
   else if(c === '/help'){ const el = turnEl('/help'); finish(el, '/help', {text: COMMANDS.map(x=>'- `' + x.c + (x.a ? ' ' + x.a : '') + '` — ' + x.d).join('\n'), model: 'Commands', by: 'Type / in the box to see these'}, []); }
   else { toast('No such command — type / to see them'); return true; }
   return true;

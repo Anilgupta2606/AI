@@ -77,6 +77,7 @@ export const SECTIONS = [
     ['Rules', 'Every draft is checked (R1–R11: search what changes, cite what was read, numbers from sources, sums right, dates past/future…) and sent back to fix.'],
     ['Code', 'Code in an answer is run before you see it; any "Output" shown is what really printed.'],
     ['Pictures', 'On the page: 📎 → Images (or Take a photo on a phone). gemma3 on this Mac describes it and reads its text; on a phone, Gemini. Check exact figures — small models can misread a digit.'],
+    ['Making pictures', '"Draw / make / generate an image of…" (or /image on the page): made in seconds by FLUX.1 through your Cloudflare relay (your free daily allowance); saved in ~/Pictures/AI Images and shown on the page with Download.'],
     ['Files and folders', 'On the page: 📎 → Files (PDF, Excel, Word, PowerPoint, CSV, text, code) or Folder (its text and code files, up to 40). Each Excel sheet becomes a table.'],
     ['Analysing tables', 'Every table gets an exact summary worked out in code: totals, averages, and totals per category and per month. Its files are also in the code sandbox, so it can run Python on the real data.'],
     ['Trust', 'Sources are marked official, reference, news or other, and research opens the most trusted first. After each answer a second model checks every claim against what was read: ✓ High / ~ Medium / ⚠ Low confidence, and what the sources contradict.'],
