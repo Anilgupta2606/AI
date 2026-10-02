@@ -171,14 +171,18 @@ export async function runAgent(question, o){
   const formatRule = [fmt.oneWord ? 'Answer with ONE word only — no sentence, no punctuation, nothing else.' : '', fmt.numberOnly ? 'Answer with the number only — no words.' : '',
     wantBullets ? 'Answer with exactly ' + wantBullets + ' "- " bullet lines and nothing else.' : '', fmt.lang ? 'Write the whole answer in ' + fmt.lang + (LANG_SCRIPT[fmt.lang.toLowerCase()] ? ' script' : '') + ', not English.' : '',
     fmt.terse ? 'Give only the answer, no explanation.' : ''].filter(Boolean).join(' ');
+  // the programming language asked for ("a JavaScript function…"): said first, and the answer's code checked for it
+  const LANGS = {javascript: /^(js|javascript|node|jsx|mjs)$/i, typescript: /^(ts|typescript|tsx)$/i, python: /^(py|python3?)$/i, java: /^java$/i, 'c++': /^(cpp|c\+\+|cc)$/i, sql: /^(sql|sqlite|mysql|postgres(ql)?)$/i, bash: /^(bash|sh|shell|zsh)$/i, go: /^(go|golang)$/i, rust: /^(rust|rs)$/i};
+  const askedLang = /\b(write|build|create|make|implement|fix|debug|refactor)\b[\s\S]{0,40}\b(code|program|script|function|class|app|algorithm|query)\b/i.test(question) ? ((/\b(javascript|typescript|python|java(?!script)|c\+\+|sql|bash|golang|rust)\b/i.exec(question) || [])[1] || '').toLowerCase().replace('golang', 'go') : '';
+  const langRule = askedLang ? 'Write the code in ' + askedLang.replace(/^./, c=>c.toUpperCase()) + ' (as the user asked), in a fenced block marked ' + askedLang + '.' : '';
   const strictFormat = !!formatRule;
   // your goal for this conversation and what you asked it to remember about you
   const about = (o.goal ? '\nThe user\'s goal in this conversation: ' + o.goal : '') + (o.profile && o.profile.length ? '\nWhat the user asked you to remember about them:\n' + o.profile.map(p=>'- ' + p).join('\n') : '') +
     ((o.disabled || []).length ? '\nSwitched off by the user (do not try them): ' + o.disabled.join(', ') + '.' : '');
-  const messages = [{role: 'system', content: (strictFormat ? 'FORMAT (the user\'s instruction — this comes before everything below): ' + formatRule + '\n\n' : '') + SYSTEM(today) + RULEBOOK(o) + about}].concat(o.history || [], [{role: 'user', content: question + lessons + (attached.length ? '\n\nFiles I attached (answer from them; cite them like [1]):\n' + attached.join('\n\n') : '')}]);
+  const messages = [{role: 'system', content: (strictFormat || langRule ? 'FORMAT (the user\'s instruction — this comes before everything below): ' + [formatRule, langRule].filter(Boolean).join(' ') + '\n\n' : '') + SYSTEM(today) + RULEBOOK(o) + about}].concat(o.history || [], [{role: 'user', content: question + lessons + (attached.length ? '\n\nFiles I attached (answer from them; cite them like [1]):\n' + attached.join('\n\n') : '')}]);
   if(o.files && o.files.length) messages.push({role: 'user', content: 'Files I mentioned: ' + o.files.join(', ') + ' (use read_file).'});
   const timely = (o.attachments || []).length ? false : o.isTimely ? o.isTimely(question) : /\b(today|now|latest|current|recent|news|price|rate|score|who is|who won)\b/i.test(question);
-  let lastResults = [], lastChart = null, prevIssues = '', fakeToolNudged = false, formatFixes = 0;
+  let lastResults = [], lastChart = null, prevIssues = '', fakeToolNudged = false, formatFixes = 0, langFixes = 0;
   let runs = 0, lastRun = null, nudgedRun = false, fixes = 0;
   let nudged = false, nudgedOpen = false, searches = 0, opened = 0, revisions = 0, firstIssues = null, best = null;
   const usedSearch = new Set(), usedRead = new Set();                // which services answered (a backup shows here)
@@ -356,6 +360,11 @@ export async function runAgent(question, o){
       pushBack(text, 'That is not one of your tools. ' + (codeQ ? 'Write the function itself in a fenced code block (```python … ```), then test it with run_code.' : 'Answer the question in plain sentences.'));
       continue;
     }
+    // code in the language asked for
+    if(askedLang && LANGS[askedLang] && text && langFixes < 2 && turn < 8){
+      const fences = Array.from(text.matchAll(/```[ \t]*([\w+#-]*)/g)).map(m=>m[1]).filter(Boolean);
+      if(fences.length && !fences.some(f=>LANGS[askedLang].test(f)) || (!fences.length && /```/.test(text) === false && runs)){ langFixes++; pushBack(text, 'The user asked for ' + askedLang + ' code. Write the whole solution in ' + askedLang + ' (not another language), in a ```' + askedLang + ' block, and test it with run_code if it can run here.'); continue; }
+    }
     // the format the user asked for
     if(strictFormat && text && formatFixes < 2 && turn < 8){
       const bare = text.replace(/\[\d+\]/g, '').trim(), problems = [];
@@ -392,7 +401,7 @@ export async function runAgent(question, o){
       }
     }
     // searched but read nothing: snippets are often old or partial — open a page or two and confirm (once)
-    if(!forceCloud && searches && !opened && !nudgedOpen && turn < 8){
+    if(!forceCloud && !codeQ && searches && !opened && !nudgedOpen && turn < 8){
       nudgedOpen = true;
       pushBack(text, 'Before you answer: open the one or two most relevant result pages with open_page and confirm the facts (snippets can be old or wrong). Then answer.');
       continue;
